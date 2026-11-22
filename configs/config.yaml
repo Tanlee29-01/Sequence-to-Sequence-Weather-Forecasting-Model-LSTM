@@ -1,0 +1,86 @@
+# ==============================================================================
+# Master Configuration for Sequence-to-Sequence Weather Forecasting (Topic 5)
+# Jena Climate Dataset: 7-day history (168h) -> 3-day forecast (72h) of T (degC)
+# ==============================================================================
+
+project:
+  name: "course_work_topic_5_LSTM_regression_jena_climate_dataset"
+  seed: 42
+  device: "auto" # "cuda", "cpu", or "auto"
+
+data:
+  raw_csv_path: "data/jena_climate_2009_2016.csv"
+  processed_dir: "data"
+  seq_len: 168        # 168 giờ (7 ngày) dữ liệu đầu vào
+  pred_len: 72        # 72 giờ (3 ngày) nhiệt độ cần dự báo
+  target_col: "T (degC)"
+  all_features:
+    - "p (mbar)"
+    - "T (degC)"
+    - "Tpot (K)"
+    - "Tdew (degC)"
+    - "rh (%)"
+    - "VPmax (mbar)"
+    - "VPact (mbar)"
+    - "VPdef (mbar)"
+    - "sh (g/kg)"
+    - "H2OC (mmol/mol)"
+    - "rho (g/m**3)"
+    - "wv (m/s)"
+    - "max. wv (m/s)"
+    - "wd (deg)"
+  num_features: 14
+  train_ratio: 0.70   # 70% tập huấn luyện
+  val_ratio: 0.15     # 15% tập kiểm định
+  test_ratio: 0.15    # 15% tập kiểm thử
+  batch_size: 64
+  num_workers: 0
+  resample_rule: "1h"
+  invalid_wind_val: -9999.0
+
+models:
+  # Model 1: Baseline Seq2Seq LSTM
+  seq2seq_lstm:
+    input_dim: 14
+    hidden_dim: 128
+    num_layers: 2
+    dropout: 0.2
+    output_dim: 1
+
+  # Model 2: Seq2Seq LSTM with Bahdanau Attention
+  seq2seq_attention:
+    input_dim: 14
+    hidden_dim: 128
+    num_layers: 2
+    dropout: 0.2
+    output_dim: 1
+
+  # Model 3: TimeSeries Transformer
+  transformer:
+    input_dim: 14
+    d_model: 64
+    nhead: 4
+    num_encoder_layers: 2
+    num_decoder_layers: 2
+    dim_feedforward: 256
+    dropout: 0.1
+    output_dim: 1
+
+training:
+  learning_rate: 0.001
+  weight_decay: 0.00001
+  epochs: 50
+  early_stopping_patience: 7
+  clip_grad_norm: 1.0
+  teacher_forcing_ratio_start: 0.5
+  teacher_forcing_decay: 0.95
+  criterion: "MSELoss"
+
+evaluation:
+  tolerance_degC: 1.5   # Ngưỡng dung sai ±1.5 độ C để tính tỷ lệ chính xác
+  warmup_runs: 10       # Số lần chạy khởi động trước khi đo Latency
+
+paths:
+  checkpoints_dir: "checkpoints"
+  runs_dir: "runs"
+  evaluation_dir: "evalution_results"
