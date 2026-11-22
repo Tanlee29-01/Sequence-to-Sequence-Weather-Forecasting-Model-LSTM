@@ -145,20 +145,7 @@ tensorboard --logdir runs
 ```
 Truy cập trình duyệt tại `http://localhost:6006` để theo dõi đồ thị loss, learning rate và biểu đồ dự báo.
 
-### 5.6 Chạy Demo CLI (Demo dự báo nhiệt độ 72 giờ)
-```bash
-# Tự động tìm checkpoint tốt nhất cho mô hình Seq2Seq Attention
-python app.py --model seq2seq_attention
-
-# Chỉ định rõ checkpoint và thiết bị
-python app.py --model transformer --checkpoint checkpoints/transformer_20261116-204500_best.pth --device cpu
-
-# Chỉ định thư mục đầu ra tùy chỉnh
-python app.py --model seq2seq_lstm --output_dir my_results
-```
-Biểu đồ dự báo và Attention Heatmap sẽ được lưu tự động tại `evalution_results/`.
-
-### 5.7 Chạy Kiểm Thử Tự Động (Smoke Tests & Unit Tests)
+### 5.6 Chạy Kiểm Thử Tự Động (Smoke Tests & Unit Tests)
 Hệ thống cung cấp bộ kiểm thử khói hoàn chỉnh tại thư mục `tests/` để xác minh mọi thành phần trong gói `src/`:
 ```bash
 # Cách 1: Chạy toàn bộ Smoke Tests qua main.py
