@@ -40,10 +40,10 @@ class TestEDA(unittest.TestCase):
             os.rmdir(self.test_output_dir)
 
     def test_run_eda_generates_all_plots(self):
-        """Kiểm tra pipeline EDA xuất ra đủ 3 tệp hình ảnh PNG chuẩn."""
+        """Kiểm tra pipeline EDA xuất ra đủ 6 tệp hình ảnh PNG cốt lõi trên tập Train."""
         generated = run_eda_pipeline(self.mock_train_df, output_dir=self.test_output_dir)
 
-        self.assertEqual(len(generated), 3)
+        self.assertEqual(len(generated), 6)
         for filepath in generated:
             self.assertTrue(os.path.exists(filepath), f"File {filepath} không được tạo.")
             self.assertTrue(filepath.endswith(".png"))
@@ -63,13 +63,13 @@ def run_smoke_test():
     )
     test_dir = "evalution_results/smoke_test_eda"
 
-    print("[1/2] Chạy EDA Pipeline xuất 3 biểu đồ trực quan...")
+    print("[1/2] Chạy EDA Pipeline xuất 6 biểu đồ cốt lõi...")
     files = run_eda_pipeline(mock_train, output_dir=test_dir)
-    assert len(files) == 3
+    assert len(files) == 6
     for f in files:
         assert os.path.exists(f)
         os.remove(f)
-    print("      -> 3 biểu đồ xuất thành công: PASSED")
+    print("      -> 6 biểu đồ xuất thành công: PASSED")
 
     print("[2/2] Dọn dẹp thư mục...")
     if os.path.exists(test_dir):

@@ -89,7 +89,11 @@ def run_pipeline(args) -> None:
             # Kiểm chứng không rò rỉ
             dm.verify_zero_leakage()
             print("[ANTI-LEAKAGE] Đã kiểm chứng Zero Leakage: Chỉ thực hiện EDA trên tập Train!")
-            eda_files = run_eda_pipeline(dm.train_df, output_dir=os.path.join(config.get("paths", {}).get("evaluation_dir", "evalution_results"), "eda"))
+            eda_files = run_eda_pipeline(
+                dm.train_df,
+                output_dir=os.path.join(config.get("paths", {}).get("evaluation_dir", "evalution_results"), "eda"),
+                dm=dm,
+            )
             for f in eda_files:
                 print(f"  + Đã lưu biểu đồ EDA: {f}")
 

@@ -16,11 +16,11 @@ def _finalize_plot(
     show_legend: bool = False,
 ) -> None:
     """Định dạng chung (tiêu đề, nhãn trục, lưới, chú giải) và lưu/hiển thị biểu đồ.
-    - Hàm này thực hiện: Gom phần trang trí lặp lại vào 1 chỗ để các hàm vẽ bên dưới ngắn gọn, dễ đọc.
+    - Hàm này thực hiện: Gom phần trang trí lặp lại vào 1 hàm dùng chung để code các hàm vẽ bên dưới ngắn gọn, dễ đọc.
     - Input:
         + fig, ax: Đối tượng Figure và Axes của Matplotlib.
         + title, xlabel, ylabel: Tiêu đề và nhãn 2 trục.
-        + save_path: Đường dẫn lưu file PNG (nếu None thì hiển thị trực tiếp).
+        + save_path: Đường dẫn lưu ảnh PNG (None nếu hiển thị trực tiếp trong Notebook).
         + show_legend: Bật/tắt khung chú giải (legend).
     - Output:
         + Không trả về giá trị (lưu PNG hoặc plt.show()).
@@ -48,7 +48,7 @@ def _finalize_plot(
 
 
 # ==============================================================================
-# 1. KIỂM TRA CHẤT LƯỢNG DỮ LIỆU & PHA 1 (SPLIT FIRST)
+# 1. CHẤT LƯỢNG DỮ LIỆU & PHA 1 (SPLIT FIRST)
 # ==============================================================================
 
 def plot_wind_anomalies(
@@ -58,11 +58,11 @@ def plot_wind_anomalies(
     save_path: Optional[str] = None,
 ) -> None:
     """So sánh tốc độ gió wv (m/s) trước và sau khi lọc giá trị lỗi cảm biến (-9999.0).
-    - Hàm này thực hiện: Vẽ 2 biểu đồ cạnh nhau (trước lọc và sau lọc) để thấy rõ tác hại của nhiễu -9999.0.
+    - Hàm này thực hiện: Vẽ 2 biểu đồ Line cạnh nhau để chứng minh sự tồn tại và hiệu quả loại bỏ nhiễu -9999.0.
     - Input:
         + raw_df: DataFrame gốc chứa cột 'wv (m/s)'.
         + cleaned_df: DataFrame đã lọc (tùy chọn; nếu None tự thay invalid_val -> NaN).
-        + invalid_val: Giá trị lỗi cảm biến (mặc định -9999.0).
+        + invalid_val: Giá trị lỗi cảm biến cần lọc (mặc định -9999.0).
         + save_path: Đường dẫn lưu ảnh PNG (tùy chọn).
     - Output:
         + Không trả về giá trị (hiển thị hoặc lưu file ảnh).
@@ -96,7 +96,7 @@ def plot_data_split_timeline(
     save_path: Optional[str] = None,
 ) -> None:
     """Trực quan hóa Pha 1 (Split First): Chia tuần tự 70% Train - 15% Val - 15% Test.
-    - Hàm này thực hiện: Vẽ 3 tập dữ liệu theo trục thời gian kèm 2 đường ranh giới để chứng minh không rò rỉ tương lai.
+    - Hàm này thực hiện: Vẽ 3 tập dữ liệu nối tiếp theo trục thời gian kèm 2 đường ranh giới để chứng minh Zero Time Leakage.
     - Input:
         + train_df, val_df, test_df: 3 DataFrame đã chia tuần tự theo thời gian.
         + target_col: Cột nhiệt độ mục tiêu (mặc định 'T (degC)').
@@ -124,7 +124,7 @@ def plot_data_split_timeline(
 
 
 # ==============================================================================
-# 2. PHA 2: PHÂN TÍCH KHÁM PHÁ DỮ LIỆU CHỈ TRÊN TẬP TRAIN (EDA ON TRAIN ONLY)
+# 2. PHA 2: PHÂN TÍCH KHÁM PHÁ DỮ LIỆU CHỈ TRÊN TẬP TRAIN (6 BIỂU ĐỒ CỐT LÕI)
 # ==============================================================================
 
 def plot_temperature_trend(
@@ -133,7 +133,7 @@ def plot_temperature_trend(
     save_path: Optional[str] = None,
 ) -> None:
     """Vẽ xu hướng biến thiên nhiệt độ dài hạn theo thời gian trên tập Train.
-    - Hàm này thực hiện: Vẽ chuỗi nhiệt độ 1h, đường trung bình trượt 30 ngày (720h) và mức Mean trên 70% tập Train.
+    - Hàm này thực hiện: Vẽ chuỗi nhiệt độ 1h, đường trung bình trượt 30 ngày (720h) và đường Mean để thấy rõ chu kỳ mùa.
     - Input:
         + train_df: DataFrame tập Train, shape (N_train, 14).
         + target_col: Cột nhiệt độ (mặc định 'T (degC)').
@@ -146,7 +146,7 @@ def plot_temperature_trend(
     ax.plot(train_df.index, s, color="tab:blue", lw=0.6, alpha=0.55, label="Nhiệt độ 1h")
 
     if len(train_df) >= 720:
-        ax.plot(train_df.index, s.rolling(720, min_periods=1).mean(), color="#d62728", lw=2.0, label="Trung bình 30 ngày")
+        ax.plot(train_df.index, s.rolling(720, min_periods=1).mean(), color="#d62728", lw=2.0, label="Trung bình trượt 30 ngày (720h)")
 
     ax.axhline(s.mean(), color="#2ca02c", ls="--", lw=1.3, label=f"Mean: {s.mean():.2f}°C (Min {s.min():.1f}°C | Max {s.max():.1f}°C)")
     _finalize_plot(
@@ -163,7 +163,7 @@ def plot_temperature_distribution(
     save_path: Optional[str] = None,
 ) -> None:
     """Vẽ phân phối (Boxplot + Histogram/KDE) của nhiệt độ T (degC) trên tập Train.
-    - Hàm này thực hiện: Trực quan hóa hình dạng phân phối, độ lệch (Skew), Mean và Median của biến mục tiêu.
+    - Hàm này thực hiện: Trực quan hóa hình dạng phân phối, độ lệch (Skew), ngoại lai, Mean và Median của biến mục tiêu.
     - Input:
         + train_df: DataFrame tập Train, shape (N_train, 14).
         + target_col: Cột nhiệt độ (mặc định 'T (degC)').
@@ -184,41 +184,13 @@ def plot_temperature_distribution(
     _finalize_plot(fig, ax_hist, xlabel="Nhiệt độ (°C)", ylabel="Số giờ", save_path=save_path, show_legend=True)
 
 
-def plot_seasonal_monthly_cycle(
-    train_df: pd.DataFrame,
-    target_col: str = "T (degC)",
-    save_path: Optional[str] = None,
-) -> None:
-    """Phân tích chu kỳ nhiệt độ theo 12 tháng trong năm trên tập Train.
-    - Hàm này thực hiện: Gom nhóm theo tháng (1–12), vẽ Boxplot kèm đường trung bình tháng để thấy rõ 4 mùa.
-    - Input:
-        + train_df: DataFrame tập Train có DateTimeIndex.
-        + target_col: Cột nhiệt độ (mặc định 'T (degC)').
-        + save_path: Đường dẫn lưu ảnh PNG (tùy chọn).
-    - Output:
-        + Không trả về giá trị (hiển thị hoặc lưu file ảnh).
-    """
-    df_m = train_df[[target_col]].dropna().assign(month=lambda d: d.index.month)
-    means = df_m.groupby("month")[target_col].mean()
-
-    fig, ax = plt.subplots(figsize=(11, 4.5))
-    sns.boxplot(data=df_m, x="month", y=target_col, hue="month", palette="coolwarm", legend=False, fliersize=2, ax=ax)
-    ax.plot(np.arange(len(means)), means.values, color="#111111", marker="o", lw=2.0, label="Trung bình tháng")
-    _finalize_plot(
-        fig, ax,
-        title="Chu kỳ theo mùa: Nhiệt độ T (degC) qua 12 tháng (Tập Train)",
-        xlabel="Tháng (1 - 12)", ylabel="Nhiệt độ (°C)",
-        save_path=save_path, show_legend=True,
-    )
-
-
 def plot_diurnal_cycle(
     train_df: pd.DataFrame,
     target_col: str = "T (degC)",
     save_path: Optional[str] = None,
 ) -> None:
     """Phân tích chu kỳ dao động nhiệt độ ngày đêm theo 24 giờ trên tập Train.
-    - Hàm này thực hiện: Tính Mean ± Std theo từng giờ (0–23h) và đánh dấu giờ nóng nhất / lạnh nhất.
+    - Hàm này thực hiện: Gom nhóm theo giờ (0–23h), vẽ Mean ± 1 Std và đánh dấu giờ nóng nhất / lạnh nhất trong ngày.
     - Input:
         + train_df: DataFrame tập Train có DateTimeIndex.
         + target_col: Cột nhiệt độ (mặc định 'T (degC)').
@@ -248,7 +220,7 @@ def plot_correlation_heatmap(
     save_path: Optional[str] = None,
 ) -> None:
     """Vẽ ma trận tương quan Pearson giữa 14 đặc trưng khí tượng trên tập Train.
-    - Hàm này thực hiện: Tính train_df.corr() và hiển thị bản đồ nhiệt Heatmap.
+    - Hàm này thực hiện: Tính train_df.corr() và vẽ bản đồ nhiệt Heatmap để phát hiện đa cộng tuyến và các biến ảnh hưởng mạnh đến T.
     - Input:
         + train_df: DataFrame tập Train, shape (N_train, 14).
         + save_path: Đường dẫn lưu ảnh PNG (tùy chọn).
@@ -261,13 +233,13 @@ def plot_correlation_heatmap(
     _finalize_plot(fig, save_path=save_path)
 
 
-def plot_target_correlations(
+def plot_scatter_relationships(
     train_df: pd.DataFrame,
     target_col: str = "T (degC)",
     save_path: Optional[str] = None,
 ) -> None:
-    """Xếp hạng mức độ tương quan Pearson của 13 biến khí tượng còn lại với T (degC).
-    - Hàm này thực hiện: Vẽ biểu đồ thanh ngang phân biệt tương quan thuận (đỏ) và tương quan nghịch (xanh).
+    """Vẽ 3 biểu đồ phân tán (Scatter) giữa T (degC) với VPmax, rho và rh trên tập Train.
+    - Hàm này thực hiện: Lấy mẫu ngẫu nhiên 3.000 điểm trên tập Train để chỉ rõ quan hệ phi tuyến (VPmax) và tuyến tính nghịch (rho, rh).
     - Input:
         + train_df: DataFrame tập Train, shape (N_train, 14).
         + target_col: Cột nhiệt độ mục tiêu (mặc định 'T (degC)').
@@ -275,23 +247,25 @@ def plot_target_correlations(
     - Output:
         + Không trả về giá trị (hiển thị hoặc lưu file ảnh).
     """
-    corr = train_df.corr()[target_col].drop(target_col).sort_values()
-    colors = ["#2166ac" if v < 0 else "#d62728" for v in corr.values]
+    clean = train_df.dropna()
+    sample = clean.sample(n=min(3000, len(clean)), random_state=42)
+    pairs = [
+        ("VPmax (mbar)", "#d62728", "Phi tuyến hàm mũ"),
+        ("rho (g/m**3)", "#1f77b4", "Tuyến tính nghịch chặt"),
+        ("rh (%)", "#2ca02c", "Nghịch biến, phân tán rộng"),
+    ]
 
-    fig, ax = plt.subplots(figsize=(10, 5.5))
-    bars = ax.barh(corr.index, corr.values, color=colors, alpha=0.85)
-    ax.axvline(0, color="#333333", lw=1.0)
-    ax.set_xlim(-1.15, 1.15)
-    for bar, v in zip(bars, corr.values):
-        ax.text(v + (0.02 if v >= 0 else -0.02), bar.get_y() + bar.get_height() / 2, f"{v:+.2f}",
-                va="center", ha="left" if v >= 0 else "right", fontsize=9, fontweight="bold")
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
+    for ax, (col, color, desc) in zip(axes, pairs):
+        r = sample[target_col].corr(sample[col])
+        ax.scatter(sample[target_col], sample[col], s=10, alpha=0.35, color=color)
+        ax.set_title(f"{target_col} vs {col}\n(r = {r:+.2f} | {desc})", fontsize=10, fontweight="bold")
+        ax.set_xlabel(target_col)
+        ax.set_ylabel(col)
+        ax.grid(True, linestyle=":", alpha=0.6)
 
-    _finalize_plot(
-        fig, ax,
-        title=f"Xếp hạng tương quan Pearson với {target_col} (Tập Train)",
-        xlabel="Hệ số tương quan Pearson (r)",
-        save_path=save_path,
-    )
+    fig.suptitle("Biểu đồ phân tán (Scatter): Quan hệ tuyến tính & phi tuyến với nhiệt độ (Tập Train)", fontsize=12, fontweight="bold")
+    _finalize_plot(fig, save_path=save_path)
 
 
 def plot_autocorrelation(
@@ -301,7 +275,7 @@ def plot_autocorrelation(
     save_path: Optional[str] = None,
 ) -> None:
     """Vẽ hàm tự tương quan (ACF) của nhiệt độ từ độ trễ 1h đến 168h (7 ngày) trên tập Train.
-    - Hàm này thực hiện: Tính hệ số tự tương quan theo từng giờ và đánh dấu các đỉnh chu kỳ bội số 24h (24h..168h).
+    - Hàm này thực hiện: Tính hệ số tự tương quan theo từng giờ và đánh dấu các đỉnh bội số 24h (24h..168h) để lý giải chọn cửa sổ 168h -> 72h.
     - Input:
         + train_df: DataFrame tập Train, shape (N_train, 14).
         + target_col: Cột nhiệt độ (mặc định 'T (degC)').
@@ -331,103 +305,6 @@ def plot_autocorrelation(
     )
 
 
-def plot_temperature_regime_pie(
-    train_df: pd.DataFrame,
-    target_col: str = "T (degC)",
-    save_path: Optional[str] = None,
-) -> None:
-    """Vẽ biểu đồ tròn (Donut) phân bổ tỷ lệ % số giờ theo 4 ngưỡng nhiệt độ trên tập Train.
-    - Hàm này thực hiện: Chia nhiệt độ thành 4 ngưỡng (<0°C, 0–10°C, 10–20°C, >20°C) và vẽ biểu đồ tròn.
-    - Input:
-        + train_df: DataFrame tập Train, shape (N_train, 14).
-        + target_col: Cột nhiệt độ mục tiêu (mặc định 'T (degC)').
-        + save_path: Đường dẫn lưu ảnh PNG (tùy chọn).
-    - Output:
-        + Không trả về giá trị (hiển thị hoặc lưu file ảnh).
-    """
-    s = train_df[target_col].dropna()
-    bins = [-np.inf, 0.0, 10.0, 20.0, np.inf]
-    labels = ["Rét đậm (< 0°C)", "Lạnh/Mát (0–10°C)", "Ôn hòa (10–20°C)", "Nóng (> 20°C)"]
-    counts = pd.cut(s, bins=bins, labels=labels).value_counts().reindex(labels)
-    colors = ["#4575b4", "#91bfdb", "#fee090", "#d73027"]
-
-    fig, ax = plt.subplots(figsize=(7.5, 5.2))
-    ax.pie(
-        counts.values, labels=labels, colors=colors, autopct="%1.1f%%",
-        startangle=140, pctdistance=0.78, wedgeprops={"width": 0.45, "edgecolor": "white"},
-    )
-    ax.set_title("Tỷ lệ phân bố các ngưỡng nhiệt độ trên tập Train (Donut Chart)", fontsize=12, fontweight="bold")
-    _finalize_plot(fig, save_path=save_path)
-
-
-def plot_scatter_relationships(
-    train_df: pd.DataFrame,
-    target_col: str = "T (degC)",
-    save_path: Optional[str] = None,
-) -> None:
-    """Vẽ 3 biểu đồ phân tán (Scatter) giữa nhiệt độ T (degC) và VPmax, rho, rh trên tập Train.
-    - Hàm này thực hiện: Lấy mẫu ngẫu nhiên tối đa 3.000 điểm trên tập Train để thể hiện rõ quan hệ tuyến tính và phi tuyến.
-    - Input:
-        + train_df: DataFrame tập Train, shape (N_train, 14).
-        + target_col: Cột nhiệt độ mục tiêu (mặc định 'T (degC)').
-        + save_path: Đường dẫn lưu ảnh PNG (tùy chọn).
-    - Output:
-        + Không trả về giá trị (hiển thị hoặc lưu file ảnh).
-    """
-    sample = train_df.dropna().sample(n=min(3000, len(train_df.dropna())), random_state=42)
-    pairs = [
-        ("VPmax (mbar)", "#d62728", "Phi tuyến hàm mũ (Clausius–Clapeyron)"),
-        ("rho (g/m**3)", "#1f77b4", "Tuyến tính nghịch rất chặt"),
-        ("rh (%)", "#2ca02c", "Nghịch biến, phân tán rộng"),
-    ]
-
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
-    for ax, (col, color, desc) in zip(axes, pairs):
-        r = sample[target_col].corr(sample[col])
-        ax.scatter(sample[target_col], sample[col], s=10, alpha=0.35, color=color)
-        ax.set_title(f"{target_col} vs {col}\n(r = {r:+.2f} | {desc})", fontsize=10, fontweight="bold")
-        ax.set_xlabel(target_col)
-        ax.set_ylabel(col)
-        ax.grid(True, linestyle=":", alpha=0.6)
-
-    fig.suptitle("Biểu đồ phân tán (Scatter): Quan hệ tuyến tính & phi tuyến với nhiệt độ (Tập Train)", fontsize=12, fontweight="bold")
-    _finalize_plot(fig, save_path=save_path)
-
-
-def plot_wind_rose(
-    train_df: pd.DataFrame,
-    save_path: Optional[str] = None,
-) -> None:
-    """Vẽ biểu đồ hoa gió (Polar Wind Rose) thể hiện hướng gió wd (deg) và tốc độ gió wv (m/s).
-    - Hàm này thực hiện: Chia vòng tròn 360° thành 16 hướng gió, vẽ tần suất xuất hiện và tô màu theo tốc độ gió trung bình.
-    - Input:
-        + train_df: DataFrame tập Train chứa cột 'wd (deg)' và 'wv (m/s)'.
-        + save_path: Đường dẫn lưu ảnh PNG (tùy chọn).
-    - Output:
-        + Không trả về giá trị (hiển thị hoặc lưu file ảnh).
-    """
-    df_w = train_df[["wd (deg)", "wv (m/s)"]].dropna()
-    n_bins = 16
-    edges = np.linspace(0, 360, n_bins + 1)
-    idx = np.clip(np.digitize(df_w["wd (deg)"] % 360, edges) - 1, 0, n_bins - 1)
-
-    counts = np.bincount(idx, minlength=n_bins) / max(1, len(df_w)) * 100.0
-    mean_wv = np.array([df_w["wv (m/s)"].iloc[idx == i].mean() if (idx == i).any() else 0.0 for i in range(n_bins)])
-    theta = np.deg2rad((edges[:-1] + edges[1:]) / 2)
-    width = 2 * np.pi / n_bins
-
-    fig = plt.figure(figsize=(6.8, 5.8))
-    ax = fig.add_subplot(111, projection="polar")
-    ax.set_theta_zero_location("N")
-    ax.set_theta_direction(-1)
-    colors = plt.cm.viridis(mean_wv / max(mean_wv.max(), 1e-6))
-    ax.bar(theta, counts, width=width * 0.9, color=colors, edgecolor="white", alpha=0.9)
-    sm = plt.cm.ScalarMappable(cmap="viridis", norm=plt.Normalize(vmin=0, vmax=max(mean_wv.max(), 1e-6)))
-    fig.colorbar(sm, ax=ax, pad=0.1, shrink=0.8, label="Tốc độ gió TB (m/s)")
-    ax.set_title("Biểu đồ hoa gió (Wind Rose): Tần suất (%) & tốc độ gió theo hướng (Tập Train)", fontsize=11, fontweight="bold", pad=16)
-    _finalize_plot(fig, save_path=save_path)
-
-
 # ==============================================================================
 # 3. PHA 3 & PHA 4: CHUẨN HÓA & CỬA SỔ TRƯỢT ĐỘC LẬP
 # ==============================================================================
@@ -440,7 +317,7 @@ def plot_scaling_comparison(
     save_path: Optional[str] = None,
 ) -> None:
     """So sánh thang đo đặc trưng trước và sau StandardScaler (chỉ fit trên tập Train).
-    - Hàm này thực hiện: Vẽ 2 Boxplot cạnh nhau để thấy trước chuẩn hóa biên độ chênh lệch lớn, sau chuẩn hóa về Mean ≈ 0, Std ≈ 1.
+    - Hàm này thực hiện: Vẽ 2 Boxplot cạnh nhau để chứng minh chuẩn hóa đưa các biến về cùng thang đo Mean ≈ 0, Std ≈ 1.
     - Input:
         + train_raw: DataFrame tập Train gốc.
         + train_scaled: Mảng NumPy tập Train đã chuẩn hóa, shape (N_train, 14).
@@ -518,7 +395,7 @@ def summarize_eda_insights(
     train_df: pd.DataFrame, target_col: str = "T (degC)"
 ) -> Dict[str, object]:
     """Tính nhanh các chỉ số định lượng cốt lõi trên tập Train phục vụ thuyết trình Chương 3.
-    - Hàm này thực hiện: Tổng hợp Mean/Median/Std/Min/Max, giờ & tháng nóng-lạnh nhất, top biến tương quan và ACF.
+    - Hàm này thực hiện: Tổng hợp Mean/Median/Std/Min/Max, giờ nóng-lạnh nhất, top biến tương quan và ACF.
     - Input:
         + train_df: DataFrame tập Train, shape (N_train, 14).
         + target_col: Cột nhiệt độ mục tiêu (mặc định 'T (degC)').
@@ -527,7 +404,6 @@ def summarize_eda_insights(
     """
     s = train_df[target_col].dropna()
     h_mean = train_df.groupby(train_df.index.hour)[target_col].mean()
-    m_mean = train_df.groupby(train_df.index.month)[target_col].mean()
     corr = train_df.corr()[target_col].drop(target_col).sort_values(ascending=False)
     filled = train_df[target_col].ffill().bfill()
 
@@ -542,8 +418,6 @@ def summarize_eda_insights(
         "temp_skew": round(float(s.skew()), 3),
         "warmest_hour": f"{int(h_mean.idxmax())}h ({h_mean.max():.2f}°C)",
         "coldest_hour": f"{int(h_mean.idxmin())}h ({h_mean.min():.2f}°C)",
-        "warmest_month": f"Tháng {int(m_mean.idxmax())} ({m_mean.max():.2f}°C)",
-        "coldest_month": f"Tháng {int(m_mean.idxmin())} ({m_mean.min():.2f}°C)",
         "top_positive_corr": corr.head(3).round(3).to_dict(),
         "top_negative_corr": corr.tail(3).round(3).to_dict(),
         "autocorrelation": {f"lag_{k}h": round(float(filled.autocorr(lag=k)), 4) for k in [24, 48, 72, 168] if len(filled) > k + 1},
@@ -553,14 +427,16 @@ def summarize_eda_insights(
 def run_eda_pipeline(
     train_df: pd.DataFrame,
     output_dir: str = "evalution_results/eda",
-    include_extended: bool = False,
+    include_extended: bool = True,
+    dm: Optional[object] = None,
 ) -> List[str]:
-    """Chạy tự động đường ống xuất biểu đồ EDA chỉ trên tập Train (Zero Leakage).
-    - Hàm này thực hiện: Xuất 3 biểu đồ EDA cốt lõi (xu hướng, tương quan, chu kỳ 24h) và tùy chọn thêm 4 biểu đồ mở rộng.
+    """Chạy tự động đường ống xuất toàn bộ 10 biểu đồ EDA & chống rò rỉ (Zero Leakage).
+    - Hàm này thực hiện: Mặc định xuất đủ 6 biểu đồ EDA trên tập Train; nếu truyền thêm dm (JenaDataModule) sẽ xuất đủ cả 10 biểu đồ giống hệt Notebook.
     - Input:
         + train_df: DataFrame 70% tập Train, shape (N_train, 14).
         + output_dir: Thư mục lưu các ảnh PNG đầu ra.
-        + include_extended: True để xuất đủ 7 ảnh; False (mặc định) xuất 3 ảnh cốt lõi.
+        + include_extended: True (mặc định) xuất toàn bộ biểu đồ cốt lõi; False chỉ xuất 3 ảnh cơ bản.
+        + dm: Đối tượng JenaDataModule đã setup (tùy chọn) để xuất thêm 4 biểu đồ quy trình chống rò rỉ.
     - Output:
         + generated_files: Danh sách đường dẫn các file PNG đã tạo.
     """
@@ -573,11 +449,7 @@ def run_eda_pipeline(
     if include_extended:
         tasks += [
             ("eda_temperature_distribution.png", plot_temperature_distribution),
-            ("eda_temperature_regime_pie.png", plot_temperature_regime_pie),
-            ("eda_seasonal_monthly_cycle.png", plot_seasonal_monthly_cycle),
-            ("eda_target_correlations.png", plot_target_correlations),
             ("eda_scatter_relationships.png", plot_scatter_relationships),
-            ("eda_wind_rose.png", plot_wind_rose),
             ("eda_autocorrelation.png", plot_autocorrelation),
         ]
 
@@ -586,6 +458,38 @@ def run_eda_pipeline(
         path = os.path.join(output_dir, filename)
         plot_fn(train_df, save_path=path)
         generated_files.append(path)
+
+    # Nếu truyền DataModule (từ main.py --mode eda), xuất thêm 4 biểu đồ quy trình chống rò rỉ -> đủ 10 ảnh
+    if include_extended and dm is not None:
+        if getattr(dm, "raw_csv_path", None) and os.path.exists(dm.raw_csv_path):
+            raw_df = pd.read_csv(dm.raw_csv_path, usecols=["wv (m/s)"])
+            p_wind = os.path.join(output_dir, "eda_wind_anomalies.png")
+            plot_wind_anomalies(raw_df, invalid_val=getattr(dm, "invalid_wind_val", -9999.0), save_path=p_wind)
+            generated_files.append(p_wind)
+
+        if dm.train_df is not None and dm.val_df is not None and dm.test_df is not None:
+            p_split = os.path.join(output_dir, "eda_data_split_timeline.png")
+            plot_data_split_timeline(dm.train_df, dm.val_df, dm.test_df, save_path=p_split)
+            generated_files.append(p_split)
+
+        if hasattr(dm, "scaler") and hasattr(dm.scaler, "mean_"):
+            train_clean = dm.train_df.ffill().bfill()
+            train_scaled = dm.scaler.transform(train_clean.values)
+            p_scale = os.path.join(output_dir, "eda_scaling_comparison.png")
+            plot_scaling_comparison(train_clean, train_scaled, dm.features, save_path=p_scale)
+            generated_files.append(p_scale)
+
+        if len(train_df) >= getattr(dm, "seq_len", 168) + getattr(dm, "pred_len", 72):
+            p_win = os.path.join(output_dir, "eda_sliding_window_example.png")
+            plot_sliding_window_example(
+                train_df.ffill().bfill(),
+                seq_len=getattr(dm, "seq_len", 168),
+                pred_len=getattr(dm, "pred_len", 72),
+                start_idx=240,
+                save_path=p_win,
+            )
+            generated_files.append(p_win)
+
     return generated_files
 
 
@@ -599,10 +503,10 @@ if __name__ == "__main__":
     mock_train = pd.DataFrame(np.random.randn(500, 14), index=pd.date_range("2012-01-01", periods=500, freq="1h"), columns=cols)
 
     test_out = "evalution_results/test_eda"
-    files = run_eda_pipeline(mock_train, output_dir=test_out, include_extended=True)
+    files = run_eda_pipeline(mock_train, output_dir=test_out)
     insights = summarize_eda_insights(mock_train)
 
-    assert len(files) == 10 and "temp_mean_degC" in insights
+    assert len(files) == 6 and "temp_mean_degC" in insights
     for f in files:
         assert os.path.exists(f)
         os.remove(f)
