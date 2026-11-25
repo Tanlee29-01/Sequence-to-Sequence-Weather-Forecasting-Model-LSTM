@@ -39,36 +39,37 @@ def forward(
 
 ### 2.4 Vị trí và Quy chuẩn Đặt tên File Checkpoint (.pth)
 - **Thư mục lưu trữ:** Toàn bộ file trọng số mô hình được lưu tại thư mục [`checkpoints/`](file:///d:/UTH/Deeplearning/course_work_topic_5/checkpoints/).
-- **Cấu trúc đặt tên chuẩn hóa (Timestamped Naming):**
-  - File tốt nhất (Best Validation Loss): `<model_name>_<YYYYMMDD-HHMMSS>_best.pth`
-  - File vòng lặp cuối cùng (Last Epoch): `<model_name>_<YYYYMMDD-HHMMSS>_last.pth`
+- **Cấu trúc đặt tên chuẩn hóa:**
+  - Checkpoint từng epoch: `<model_name>_epoch_<n>.pth`
+  - File tốt nhất (Best Validation Loss — có timestamp): `<model_name>_<YYYYMMDD-HHMMSS>_best.pth`
+  - File tốt nhất rút gọn (Alias): `<model_name>_best.pth`
+  - File vòng lặp cuối cùng (có timestamp & alias): `<model_name>_<YYYYMMDD-HHMMSS>_last.pth`, `<model_name>_last.pth`, và `<model_name>_final.pth`
 - **Ví dụ thực tế:**
-  - `checkpoints/seq2seq_lstm_20261116-204500_best.pth`
-  - `checkpoints/seq2seq_attention_20261116-204500_best.pth`
-  - `checkpoints/transformer_20261116-204500_best.pth`
-- **Thành phần lưu trong file .pth:**
+  - `checkpoints/seq2seq_lstm_20261125-080743_best.pth` và `checkpoints/seq2seq_lstm_best.pth`
+  - `checkpoints/seq2seq_attention_20261125-082507_best.pth` và `checkpoints/seq2seq_attention_best.pth`
+  - `checkpoints/transformer_20261125-085553_best.pth` và `checkpoints/transformer_best.pth`
+- **Thành phần lưu trong file `.pth`:**
   ```python
-  checkpoint = {
-      "model_state_dict": model.state_dict(),
-      "optimizer_state_dict": optimizer.state_dict(),
+  checkpoint_data = {
+      "model_state_dict": self.model.state_dict(),
+      "optimizer_state_dict": self.optimizer.state_dict(),
+      "best_val_loss": self.best_val_loss,
       "epoch": epoch,
-      "best_val_loss": best_val_loss,
-      "config": model_config,
+      "model_name": self.model_name,
   }
   ```
-- **Tệp bộ chuẩn hóa đi kèm:** `checkpoints/scaler_train.pkl` (lưu trạng thái Mean và Scale của `StandardScaler` để giải chuẩn hóa khi triển khai).
 
 ### 2.5 Nhật ký theo dõi trực quan (TensorBoard Logging in `runs/`)
-- **Thư mục lưu trữ:** `runs/<model_name>_<YYYYMMDD-HHMMSS>/`
-- **Các chỉ số Scalar bắt buộc ghi nhận:**
-  - `loss_train`: Sai số MSE trên tập Train qua từng epoch.
-  - `loss_val`: Sai số MSE trên tập Validation qua từng epoch.
-  - `loss_test`: Sai số MSE trên tập Test sau khi đánh giá.
-  - `accuracy_train`: Tỷ lệ % số giờ dự đoán sai lệch $\le \pm 1.5^\circ\text{C}$ trên tập Train.
-  - `accuracy_val`: Tỷ lệ % số giờ dự đoán sai lệch $\le \pm 1.5^\circ\text{C}$ trên tập Validation.
-  - `accuracy_test`: Tỷ lệ % số giờ dự đoán sai lệch $\le \pm 1.5^\circ\text{C}$ trên tập Test.
-  - `Learning_Rate`: Tốc độ học hiện tại của Optimizer.
+- **Thư mục lưu trữ tách biệt theo phiên chạy:** `runs/<model_name>_<run_name>/` hoặc mặc định `runs/<model_name>_<YYYYMMDD-HHMMSS>/` (hỗ trợ cờ `--run_name` trong `main.py` để so sánh các lần chạy song song).
+- **Các chỉ số Scalar ghi nhận theo namespace (không trùng lặp):**
+  - `Loss/Train`, `Loss/Validation`, `Loss/Test`: Sai số MSE trên từng phân tập.
+  - `Accuracy/Train`, `Accuracy/Validation`, `Accuracy/Test`: Tỷ lệ % số giờ dự đoán sai lệch $\le \pm 1.5^\circ\text{C}$ (quy đổi theo `target_scale` trên Train/Val và thang $^\circ\text{C}$ thực trên Test).
+  - `Learning_Rate`: Tốc độ học hiện tại của Optimizer (phản ánh các bước giảm của LR Scheduler).
   - `Hardware/RAM_MB` & `Hardware/VRAM_MB`: Lượng tài nguyên bộ nhớ hệ thống và GPU chiếm dụng.
+- **Biểu đồ, Văn bản & Siêu tham số (Tabs `Images`, `Text`, `HParams`):**
+  - `Forecast_Comparison/<model_name>` (trục Y: `Nhiệt độ (Normalized)`) và `Attention_Weights/<model_name>` (Model 2 & 3).
+  - `Experiment/Config`: Mô tả cấu hình lần chạy (Tab `Text`).
+  - `hparam/MAE`, `hparam/RMSE`, `hparam/R2`, `hparam/Acc_1_5C` (Tab `HParams`).
 
 ---
 

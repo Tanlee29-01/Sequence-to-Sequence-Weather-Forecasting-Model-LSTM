@@ -76,6 +76,22 @@ training:
   teacher_forcing_decay: 0.95
   criterion: "MSELoss"
 
+  # --- Learning Rate Scheduler ---
+  # Loại scheduler: "ReduceLROnPlateau" | "CosineAnnealingLR" | "none"
+  scheduler_type: "ReduceLROnPlateau"
+
+  # Tham số cho ReduceLROnPlateau
+  lr_patience: 3        # Số epoch val_loss không giảm trước khi hạ LR
+  lr_factor: 0.5        # Hệ số nhân hạ LR: lr_new = lr * factor
+  lr_min: 0.00001       # Giá trị LR tối thiểu (không hạ dưới ngưỡng này)
+
+  # Tham số cho CosineAnnealingLR (chỉ dùng khi scheduler_type = "CosineAnnealingLR")
+  cosine_T_max: 50      # Chu kỳ cosine bằng tổng số epochs
+
+  # --- Trực quan hóa trong TensorBoard ---
+  # Ghi biểu đồ Forecast_Comparison và Attention_Heatmap vào TensorBoard sau mỗi N epoch
+  log_figure_every: 5
+
 evaluation:
   tolerance_degC: 1.5   # Ngưỡng dung sai ±1.5 độ C để tính tỷ lệ chính xác
   warmup_runs: 10       # Số lần chạy khởi động trước khi đo Latency

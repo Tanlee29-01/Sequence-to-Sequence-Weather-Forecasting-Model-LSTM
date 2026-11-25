@@ -1,7 +1,8 @@
 import argparse
+from datetime import datetime
 import os
 import sys
-from typing import Dict
+from typing import Dict, Optional
 import torch
 import torch.nn as nn
 import yaml
@@ -43,6 +44,38 @@ def get_device(device_str: str = "auto") -> torch.device:
         return torch.device("cuda")
     else:
         return torch.device("cpu")
+
+
+def resolve_experiment_name(
+    runs_dir: str,
+    model_name: str,
+    mode: str,
+    run_name: Optional[str] = None,
+) -> str:
+    """Tạo tên thư mục run tách biệt cho mỗi lần chạy trên TensorBoard.
+    - Hàm này thực hiện: Gắn nhãn run_name hoặc timestamp YYYYMMDD-HHMMSS để các lần huấn luyện không ghi đè lên nhau; riêng chế độ evaluate sẽ gắn vào run mới nhất của mô hình nếu không chỉ định run_name.
+    - Input:
+        + runs_dir: Thư mục gốc chứa log TensorBoard (mặc định 'runs').
+        + model_name: Tên kiến trúc mô hình.
+        + mode: Chế độ chạy ('train', 'evaluate', 'all', ...).
+        + run_name: Tên phiên thực nghiệm do người dùng truyền qua CLI (tùy chọn).
+    - Output:
+        + experiment_name: Tên thư mục con duy nhất trong runs/.
+    """
+    if run_name:
+        return f"{model_name}_{run_name}"
+
+    if mode == "evaluate" and os.path.exists(runs_dir):
+        candidates = [
+            d for d in os.listdir(runs_dir)
+            if os.path.isdir(os.path.join(runs_dir, d)) and d.startswith(f"{model_name}_")
+        ]
+        if candidates:
+            candidates.sort(key=lambda d: os.path.getmtime(os.path.join(runs_dir, d)))
+            return candidates[-1]
+
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return f"{model_name}_{timestamp}"
 
 
 def run_pipeline(args) -> None:
@@ -122,6 +155,38 @@ def run_pipeline(args) -> None:
         )
         criterion = nn.MSELoss()
 
+        # --- Khởi tạo Learning Rate Scheduler ---
+        scheduler_type = train_cfg.get("scheduler_type", "ReduceLROnPlateau").lower()
+        scheduler = None
+        if scheduler_type == "reducelronplateau":
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer,
+                mode="min",
+                factor=train_cfg.get("lr_factor", 0.5),
+                patience=train_cfg.get("lr_patience", 3),
+                min_lr=train_cfg.get("lr_min", 1e-5),
+            )
+            print(f"[SCHEDULER] ReduceLROnPlateau | factor={train_cfg.get('lr_factor', 0.5)} | patience={train_cfg.get('lr_patience', 3)} | min_lr={train_cfg.get('lr_min', 1e-5)}")
+        elif scheduler_type == "cosineannealinglr":
+            t_max = train_cfg.get("cosine_T_max", train_cfg.get("epochs", 50))
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=t_max,
+                eta_min=train_cfg.get("lr_min", 1e-5),
+            )
+            print(f"[SCHEDULER] CosineAnnealingLR | T_max={t_max} | eta_min={train_cfg.get('lr_min', 1e-5)}")
+        else:
+            print("[SCHEDULER] Không dùng LR Scheduler (scheduler_type='none').")
+
+        # --- Lấy target_scale từ DataModule để tính ngưỡng accuracy đúng ---
+        # target_scale = độ lệch chuẩn σ của T(degC) trên tập Train (vd: ~8°C)
+        # Nếu không truyền vào Trainer, tolerance_scaled = 1.5 / 1.0 = 1.5 (sai lớn)
+        # Với σ≈8: tolerance_scaled = 1.5 / 8 = 0.1875 (đúng trong không gian chuẩn hoá)
+        target_scale = float(dm.scaler.scale_[dm.target_idx]) if hasattr(dm, "scaler") and dm.scaler is not None else 1.0
+        eval_cfg = config.get("evaluation", {})
+        tolerance_degC = eval_cfg.get("tolerance_degC", 1.5)
+        print(f"[TRAINER] target_scale (σ của T°C trên Train) = {target_scale:.4f} | tolerance_scaled = {tolerance_degC / target_scale:.4f}")
+
         paths_cfg = config.get("paths", {})
         checkpoints_dir = paths_cfg.get("checkpoints_dir", "checkpoints")
 
@@ -136,17 +201,39 @@ def run_pipeline(args) -> None:
             early_stopping_patience=train_cfg.get("early_stopping_patience", 7),
             teacher_forcing_start=train_cfg.get("teacher_forcing_ratio_start", 0.5),
             teacher_forcing_decay=train_cfg.get("teacher_forcing_decay", 0.95),
+            scheduler=scheduler,
+            target_scale=target_scale,
+            tolerance_degC=tolerance_degC,
         )
 
-        logger = TensorBoardLogger(
-            log_dir=paths_cfg.get("runs_dir", "runs"),
-            experiment_name=f"{model_name}_run",
+        runs_dir = paths_cfg.get("runs_dir", "runs")
+        experiment_name = resolve_experiment_name(
+            runs_dir=runs_dir,
+            model_name=model_name,
+            mode=mode,
+            run_name=getattr(args, "run_name", None),
         )
+        print(f"[TENSORBOARD] Ghi log thực nghiệm tại: {os.path.join(runs_dir, experiment_name)}")
+
+        logger = TensorBoardLogger(
+            log_dir=runs_dir,
+            experiment_name=experiment_name,
+        )
+
+        epochs = args.epochs if args.epochs is not None else train_cfg.get("epochs", 50)
+        if mode in ["train", "all"]:
+            config_summary = (
+                f"**Model:** `{model_name}` | **LR:** `{train_cfg.get('learning_rate', 0.001)}` | "
+                f"**Scheduler:** `{train_cfg.get('scheduler_type', 'ReduceLROnPlateau')}` | "
+                f"**Epochs:** `{epochs}` | **TF start/decay:** `{train_cfg.get('teacher_forcing_ratio_start', 0.5)}/{train_cfg.get('teacher_forcing_decay', 0.95)}` | "
+                f"**target_scale:** `{target_scale:.4f}`"
+            )
+            logger.log_text("Experiment/Config", config_summary, step=0)
 
         # Chạy Huấn luyện
         if mode in ["train", "all"]:
-            epochs = args.epochs if args.epochs is not None else train_cfg.get("epochs", 50)
-            trainer.fit(train_loader, val_loader, epochs=epochs, logger=logger)
+            log_figure_every = train_cfg.get("log_figure_every", 5)
+            trainer.fit(train_loader, val_loader, epochs=epochs, logger=logger, log_figure_every=log_figure_every)
 
         # Chạy Đánh giá trên tập Test
         if mode in ["evaluate", "all"]:
@@ -177,6 +264,22 @@ def run_pipeline(args) -> None:
                 inverse_transform_fn=dm.inverse_transform_target,
                 model_name=model_name,
                 logger=logger,
+            )
+
+            logger.log_hparams(
+                hparam_dict={
+                    "model": model_name,
+                    "lr": float(train_cfg.get("learning_rate", 0.001)),
+                    "scheduler": str(train_cfg.get("scheduler_type", "ReduceLROnPlateau")),
+                    "batch_size": int(data_cfg.get("batch_size", 64)),
+                    "epochs": int(epochs),
+                },
+                metric_dict={
+                    "hparam/MAE": float(results.get("MAE", 0.0)),
+                    "hparam/RMSE": float(results.get("RMSE", 0.0)),
+                    "hparam/R2": float(results.get("R2", 0.0)),
+                    "hparam/Acc_1_5C": float(results.get("Within_Tolerance_Rate_Pct", 0.0)),
+                },
             )
 
             print("\n------------------ KẾT QUẢ ĐÁNH GIÁ (TEST SET) ------------------")
@@ -230,6 +333,12 @@ def main() -> None:
         default="auto",
         choices=["auto", "cuda", "cpu"],
         help="Thiết bị tính toán: 'auto', 'cuda', hoặc 'cpu'",
+    )
+    parser.add_argument(
+        "--run_name",
+        type=str,
+        default=None,
+        help="Nhãn định danh cho lần chạy TensorBoard (ví dụ: 'v3_cosine_lr'). Mặc định tự gắn timestamp.",
     )
 
     args = parser.parse_args()

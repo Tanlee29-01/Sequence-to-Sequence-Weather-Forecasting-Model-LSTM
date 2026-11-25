@@ -23,6 +23,7 @@ class TensorBoardLogger:
             + Không trả về giá trị (khởi tạo thực thể TensorBoardLogger).
         """
         self.exp_path = os.path.join(log_dir, experiment_name)
+        self.exp_dir = self.exp_path
         os.makedirs(self.exp_path, exist_ok=True)
         self.writer = SummaryWriter(log_dir=self.exp_path)
 
@@ -61,18 +62,18 @@ class TensorBoardLogger:
             loss_train = train_loss if train_loss is not None else 0.0
         if loss_val is None:
             loss_val = val_loss if val_loss is not None else 0.0
-        self.writer.add_scalar("loss_train", loss_train, epoch)
-        self.writer.add_scalar("loss_val", loss_val, epoch)
-        self.writer.add_scalar("accuracy_train", accuracy_train, epoch)
-        self.writer.add_scalar("accuracy_val", accuracy_val, epoch)
 
-        if loss_test is not None:
-            self.writer.add_scalar("loss_test", loss_test, epoch)
-        if accuracy_test is not None:
-            self.writer.add_scalar("accuracy_test", accuracy_test, epoch)
-
+        # --- Scalars Loss (dùng namespace nhất quán, không ghi trùng) ---
         self.writer.add_scalar("Loss/Train", loss_train, epoch)
         self.writer.add_scalar("Loss/Validation", loss_val, epoch)
+        self.writer.add_scalar("Accuracy/Train", accuracy_train, epoch)
+        self.writer.add_scalar("Accuracy/Validation", accuracy_val, epoch)
+
+        if loss_test is not None:
+            self.writer.add_scalar("Loss/Test", loss_test, epoch)
+        if accuracy_test is not None:
+            self.writer.add_scalar("Accuracy/Test", accuracy_test, epoch)
+
         self.writer.add_scalar("Learning_Rate", lr, epoch)
         self.writer.add_scalar("Hardware/RAM_MB", ram_mb, epoch)
         if vram_mb > 0.0:
@@ -82,7 +83,7 @@ class TensorBoardLogger:
         self, loss_test: float, accuracy_test: float, epoch: int = 1
     ) -> None:
         """Ghi nhận riêng chỉ số kiểm thử trên tập Test vào TensorBoard.
-        - Hàm này thực hiện: Đăng ký scalar loss_test và accuracy_test phục vụ đối chiếu trên giao diện.
+        - Hàm này thực hiện: Đăng ký scalar Loss/Test và Accuracy/Test phục vụ đối chiếu trên giao diện.
         - Input:
             + loss_test: Sai số MSE trên toàn bộ tập Test.
             + accuracy_test: Tỷ lệ % số giờ lệch <= 1.5°C trên tập Test.
@@ -90,8 +91,8 @@ class TensorBoardLogger:
         - Output:
             + Không trả về giá trị.
         """
-        self.writer.add_scalar("loss_test", loss_test, epoch)
-        self.writer.add_scalar("accuracy_test", accuracy_test, epoch)
+        self.writer.add_scalar("Loss/Test", loss_test, epoch)
+        self.writer.add_scalar("Accuracy/Test", accuracy_test, epoch)
 
     def log_prediction_figure(
         self,
@@ -99,14 +100,16 @@ class TensorBoardLogger:
         y_true: np.ndarray,
         y_pred: np.ndarray,
         tag: str = "Forecast_Comparison",
+        ylabel: str = "Nhiệt độ (Normalized)",
     ) -> None:
         """Vẽ biểu đồ so sánh chuỗi nhiệt độ thực tế và nhiệt độ dự báo 72 giờ và đưa vào TensorBoard.
         - Hàm này thực hiện: Khởi tạo đồ thị đường thẳng biểu diễn 72 mốc giờ, so sánh đường Ground Truth và đường Prediction rồi gửi sang SummaryWriter.
         - Input:
             + epoch: Chỉ số Epoch hiện tại.
-            + y_true: Chuỗi nhiệt độ thực tế (°C), shape (72,) hoặc (72, 1).
-            + y_pred: Chuỗi nhiệt độ do mô hình dự báo (°C), shape (72,) hoặc (72, 1).
+            + y_true: Chuỗi nhiệt độ thực tế, shape (72,) hoặc (72, 1).
+            + y_pred: Chuỗi nhiệt độ do mô hình dự báo, shape (72,) hoặc (72, 1).
             + tag: Thẻ định danh biểu đồ trong giao diện TensorBoard.
+            + ylabel: Nhãn hiển thị cho trục Y (mặc định 'Nhiệt độ (Normalized)').
         - Output:
             + Không trả về giá trị (lưu hình vẽ vào TensorBoard và tự động giải phóng bộ nhớ đồ họa).
         """
@@ -117,7 +120,7 @@ class TensorBoardLogger:
         ax.plot(hours, y_pred.flatten(), label="Dự báo (Prediction)", color="red", linestyle="--", linewidth=2)
         ax.set_title(f"Dự báo nhiệt độ 72 giờ tiếp theo - Epoch {epoch}")
         ax.set_xlabel("Giờ trong tương lai (+1h đến +72h)")
-        ax.set_ylabel("Nhiệt độ (°C)")
+        ax.set_ylabel(ylabel)
         ax.grid(True, linestyle=":", alpha=0.6)
         ax.legend()
 
@@ -152,6 +155,29 @@ class TensorBoardLogger:
 
         self.writer.add_figure(tag, fig, global_step=epoch)
         plt.close(fig)
+
+    def log_text(self, tag: str, text_string: str, step: int = 0) -> None:
+        """Ghi nhận thông tin văn bản / cấu hình thực nghiệm vào tab TEXT trên TensorBoard.
+        - Hàm này thực hiện: Lưu chuỗi Markdown mô tả siêu tham số hoặc cơ chế thử nghiệm để đối chiếu giữa các lần chạy.
+        - Input:
+            + tag: Tên thẻ hiển thị trong tab TEXT.
+            + text_string: Nội dung văn bản hoặc bảng Markdown.
+            + step: Bước ghi nhận (mặc định 0).
+        - Output:
+            + Không trả về giá trị.
+        """
+        self.writer.add_text(tag, text_string, global_step=step)
+
+    def log_hparams(self, hparam_dict: dict, metric_dict: dict) -> None:
+        """Ghi nhận bảng so sánh siêu tham số và chỉ số đánh giá vào tab HPARAMS trên TensorBoard.
+        - Hàm này thực hiện: Gọi add_hparams với run_name='.' để ghi trực tiếp vào thư mục run hiện tại.
+        - Input:
+            + hparam_dict: Từ điển siêu tham số (model, lr, scheduler, epochs...).
+            + metric_dict: Từ điển chỉ số kết quả (hparam/MAE, hparam/RMSE...).
+        - Output:
+            + Không trả về giá trị.
+        """
+        self.writer.add_hparams(hparam_dict, metric_dict, run_name=".")
 
     def close(self) -> None:
         """Đóng bộ ghi nhận SummaryWriter và xả sạch dữ liệu đệm ra đĩa.

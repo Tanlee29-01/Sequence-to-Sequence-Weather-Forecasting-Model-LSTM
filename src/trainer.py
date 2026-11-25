@@ -29,9 +29,10 @@ class ModelTrainer:
         teacher_forcing_decay: float = 0.95,
         tolerance_degC: float = 1.5,
         target_scale: float = 1.0,
+        scheduler: Optional[object] = None,
     ):
         """Khởi tạo Trainer với mô hình, thuật toán tối ưu và các tham số điều khiển huấn luyện.
-        - Hàm này thực hiện: Lưu trữ các tham chiếu đối tượng mạng, cấu hình thư mục lưu checkpoint và khởi tạo các biến theo dõi Early Stopping.
+        - Hàm này thực hiện: Lưu trữ các tham chiếu đối tượng mạng, cấu hình thư mục lưu checkpoint, khởi tạo các biến theo dõi Early Stopping và nhận LR Scheduler từ bên ngoài.
         - Input:
             + model: Đối tượng mô hình PyTorch cần huấn luyện.
             + optimizer: Bộ tối ưu hóa tham số (ví dụ: Adam, AdamW).
@@ -45,6 +46,7 @@ class ModelTrainer:
             + teacher_forcing_decay: Hệ số suy giảm tỷ lệ nhắc bài sau mỗi Epoch (mặc định 0.95).
             + tolerance_degC: Ngưỡng sai số nhiệt độ để tính độ chính xác (mặc định 1.5°C).
             + target_scale: Độ lệch chuẩn của biến nhiệt độ trên tập Train để chuẩn hóa ngưỡng sai số.
+            + scheduler: Đối tượng LR Scheduler PyTorch (ReduceLROnPlateau, CosineAnnealingLR...) hoặc None để bỏ qua.
         - Output:
             + Không trả về giá trị (khởi tạo thực thể ModelTrainer).
         """
@@ -59,6 +61,7 @@ class ModelTrainer:
         self.teacher_forcing_ratio = teacher_forcing_start
         self.teacher_forcing_decay = teacher_forcing_decay
         self.tolerance_scaled = tolerance_degC / max(1e-6, target_scale)
+        self.scheduler = scheduler
 
         os.makedirs(self.checkpoints_dir, exist_ok=True)
         self.best_val_loss = float("inf")
@@ -226,27 +229,35 @@ class ModelTrainer:
         val_loader: DataLoader,
         epochs: int = 50,
         logger: Optional[object] = None,
+        log_figure_every: int = 5,
     ) -> Dict[str, list]:
         """Điều phối toàn bộ chu trình huấn luyện xuyên suốt số Epoch chỉ định.
-        - Hàm này thực hiện: Chạy tuần tự từng epoch, ghi log lịch sử (loss_train, loss_val, accuracy_train, accuracy_val), kiểm tra Early Stopping và lưu Checkpoint tốt nhất.
+        - Hàm này thực hiện: Chạy tuần tự từng epoch, ghi log lịch sử (loss_train, loss_val, accuracy_train, accuracy_val), gọi scheduler.step() để cập nhật LR, kiểm tra Early Stopping, lưu Checkpoint tốt nhất và ghi biểu đồ dự báo / Attention Heatmap vào TensorBoard định kỳ.
         - Input:
             + train_loader: DataLoader tập huấn luyện.
             + val_loader: DataLoader tập kiểm định.
             + epochs: Tổng số Epoch huấn luyện tối đa (mặc định 50).
             + logger: Đối tượng TensorBoardLogger để ghi nhận trực quan (tùy chọn).
+            + log_figure_every: Chu kỳ epoch ghi biểu đồ dự báo và Attention Heatmap vào TensorBoard (mặc định mỗi 5 epoch).
         - Output:
-            + history: Từ điển lưu lịch sử train_loss, val_loss, train_acc, val_acc và tài nguyên theo từng Epoch.
+            + history: Từ điển lưu lịch sử train_loss, val_loss, train_acc, val_acc, lr và tài nguyên theo từng Epoch.
         """
         history = {
             "train_loss": [],
             "val_loss": [],
             "train_acc": [],
             "val_acc": [],
+            "lr": [],
             "ram_mb": [],
             "vram_mb": [],
         }
 
         print(f"[TRAIN] Bắt đầu huấn luyện mô hình: {self.model_name} trên {self.device}...")
+        if self.scheduler is not None:
+            print(f"[TRAIN] LR Scheduler: {type(self.scheduler).__name__} | LR khởi đầu: {self.optimizer.param_groups[0]['lr']:.6f}")
+
+        # Lấy sẵn 1 batch cố định từ val_loader để vẽ biểu đồ nhất quán xuyên suốt quá trình train
+        _viz_x, _viz_y = next(iter(val_loader))
 
         for epoch in range(1, epochs + 1):
             start_time = time.time()
@@ -255,14 +266,25 @@ class ModelTrainer:
             train_ram, train_vram = self._measure_resources()
             elapsed = time.time() - start_time
 
+            # --- Cập nhật Learning Rate Scheduler ---
+            prev_lr = self.optimizer.param_groups[0]["lr"]
+            if self.scheduler is not None:
+                # ReduceLROnPlateau cần val_loss làm thước đo; các loại khác không cần
+                if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    self.scheduler.step(val_loss)
+                else:
+                    self.scheduler.step()
+            current_lr = self.optimizer.param_groups[0]["lr"]
+            if current_lr < prev_lr:
+                print(f"  [LR] Giảm Learning Rate: {prev_lr:.6f} → {current_lr:.6f}")
+
             history["train_loss"].append(train_loss)
             history["val_loss"].append(val_loss)
             history["train_acc"].append(train_acc)
             history["val_acc"].append(val_acc)
+            history["lr"].append(current_lr)
             history["ram_mb"].append(train_ram)
             history["vram_mb"].append(train_vram)
-
-            current_lr = self.optimizer.param_groups[0]["lr"]
 
             if logger is not None and hasattr(logger, "log_metrics"):
                 logger.log_metrics(
@@ -276,11 +298,43 @@ class ModelTrainer:
                     vram_mb=train_vram,
                 )
 
+                # --- Ghi biểu đồ dự báo & Attention Heatmap định kỳ ---
+                if epoch == 1 or epoch % log_figure_every == 0:
+                    self.model.eval()
+                    with torch.no_grad():
+                        viz_x = _viz_x[:1].to(self.device)   # chỉ dùng 1 mẫu để nhanh
+                        viz_y = _viz_y[:1].to(self.device)
+                        viz_pred, viz_attn = self.model(
+                            src=viz_x, trg=None, teacher_forcing_ratio=0.0
+                        )
+
+                    # Chuyển về numpy (vẫn ở thang chuẩn hoá, logger không cần scale thực)
+                    y_true_np = viz_y[0].cpu().numpy()          # (72, 1)
+                    y_pred_np = viz_pred[0].cpu().numpy()       # (72, 1)
+
+                    if hasattr(logger, "log_prediction_figure"):
+                        logger.log_prediction_figure(
+                            epoch=epoch,
+                            y_true=y_true_np,
+                            y_pred=y_pred_np,
+                            tag=f"Forecast_Comparison/{self.model_name}",
+                        )
+
+                    if viz_attn is not None and hasattr(logger, "log_attention_heatmap"):
+                        attn_np = viz_attn[0].cpu().numpy()    # (72, 168)
+                        logger.log_attention_heatmap(
+                            epoch=epoch,
+                            attention_matrix=attn_np,
+                            tag=f"Attention_Weights/{self.model_name}",
+                        )
+
+                    self.model.train()
+
             print(
                 f"Epoch [{epoch:02d}/{epochs:02d}] ({elapsed:.1f}s) | "
                 f"loss_train: {train_loss:.5f} | loss_val: {val_loss:.5f} | "
                 f"acc_train: {train_acc:.1f}% | acc_val: {val_acc:.1f}% | "
-                f"TF: {self.teacher_forcing_ratio:.3f} | RAM: {train_ram:.1f}MB"
+                f"LR: {current_lr:.6f} | TF: {self.teacher_forcing_ratio:.3f} | RAM: {train_ram:.1f}MB"
             )
 
             # Lưu checkpoint của epoch và checkpoint tốt nhất

@@ -72,8 +72,8 @@ Hệ thống bắt buộc phải vượt qua các bài kiểm tra tự động (
 ## 4. How to do (Quy trình Hiện thực 4 Pha Chi Tiết)
 
 ### Pha 1: Chia tách dữ liệu theo dòng thời gian (Split First)
-1. Đọc file CSV bằng `pandas`, chuyển cột thời gian sang kiểu `pd.to_datetime` và gán làm chỉ số (Index).
-2. Thay thế giá trị $-9999.0$ tại các cột đo gió thành `np.nan`.
+1. Đọc file CSV bằng `pandas`, chuyển cột thời gian theo định dạng Châu Âu (`format="%d.%m.%Y %H:%M:%S"`, có dự phòng `dayfirst=True, format="mixed"`) bằng `pd.to_datetime` và gán làm chỉ số (Index).
+2. Thay thế giá trị $-9999.0$ tại các cột đo gió (`wv (m/s)`, `max. wv (m/s)`) thành `np.nan`.
 3. Gọi hàm `.resample('1h').mean()` để tính giá trị trung bình trong từng khung giờ độc lập.
 4. Chia cắt dữ liệu thành 3 DataFrame:
    ```python
@@ -156,10 +156,10 @@ import pandas as pd
 import torch
 from src.data_module import JenaDataModule
 
-# 1. Tạo mock dataframe 1000 bước thời gian với 14 thuộc tính khí tượng
-date_range = pd.date_range("2010-01-01", periods=1000, freq="1h")
-mock_data = np.random.randn(1000, 14) * 5 + 15
-mock_data[10, 11] = -9999.0  # Cài lỗi cảm biến gió
+# 1. Tạo mock dataframe 2000 bước thời gian (để 15% Val/Test = 300 dòng > 168+72)
+date_range = pd.date_range("2011-01-01", periods=2000, freq="1h")
+mock_data = np.random.randn(2000, 14) * 5 + 15
+mock_data[25, 11] = -9999.0  # Cài lỗi cảm biến gió
 
 mock_df = pd.DataFrame(mock_data, index=date_range, columns=JenaDataModule.DEFAULT_FEATURES)
 
@@ -192,32 +192,19 @@ Khi thực thi câu lệnh `python tests/test_data_module.py` hoặc `python src
 ======================================================================
 [SMOKE TEST] BẮT ĐẦU KIỂM THỬ DATA MODULE & QUY TẮC CHỐNG RÒ RỈ
 ======================================================================
-[1/5] Khởi tạo Mock DataFrame (1000 giờ, 14 đặc trưng khí tượng)...
-      -> Đã cài đặt điểm dị thường cảm biến gió: mock_data[10, 11] = -9999.0
-      -> Áp dụng Resample('1h').mean() và cắt phân tập tuần tự...
-      -> Train size: 700 dòng (70.0%)
-      -> Val size:   150 dòng (15.0%)
-      -> Test size:  150 dòng (15.0%)
-
+[1/5] Khởi tạo Mock DataFrame (2000 giờ, 14 đặc trưng khí tượng)...
+      -> Train size: 1400 | Val size: 300 | Test size: 300
 [2/5] Xác minh Chống rò rỉ dữ liệu (Anti-Leakage Verification)...
-      [ASSERT 1] Train max time (2010-01-30 03:00:00) < Val min time (2010-01-30 04:00:00): PASSED
-      [ASSERT 2] Val max time (2010-02-05 09:00:00) < Test min time (2010-02-05 10:00:00): PASSED
-      [ASSERT 3] StandardScaler n_samples_seen_ (700) == len(train_df) (700): PASSED
-      [ASSERT 4] Cảm biến gió lỗi (-9999.0) đã được lọc sạch hoàn toàn: PASSED
-      -> Zero Leakage Verification PASSED!
-
-[3/5] Kiểm tra kích thước Tensor từ DataLoader (Batch Size = 16)...
-      -> Batch X shape: (16, 168, 14) | Dtype: torch.float32 [OK]
-      -> Batch Y shape: (16, 72, 1)   | Dtype: torch.float32 [OK]
-
+      [ASSERT 1] Train max time < Val min time: PASSED
+      [ASSERT 2] Val max time < Test min time: PASSED
+      [ASSERT 3] Scaler n_samples_seen_ (1400.0) == len(train_df): PASSED
+      [ASSERT 4] Lọc sạch cảm biến gió lỗi (-9999.0): PASSED
+[3/5] Kiểm tra kích thước Tensor từ DataLoader...
+      -> Batch X shape: (16, 168, 14) [OK]
+      -> Batch Y shape: (16, 72, 1) [OK]
 [4/5] Kiểm tra giải chuẩn hóa về độ C (inverse_transform_target)...
-      -> Giá trị chuẩn hóa 3 giờ đầu: [-0.42, -0.38, -0.35]
-      -> Giá trị giải chuẩn hóa mẫu (°C): [12.84, 13.05, 13.21] [OK]
-      -> Miền giá trị nhiệt độ sau giải chuẩn hóa: Mean = 14.82°C (Hợp lệ)
-
+      -> Giá trị mẫu 3 giờ đầu (°C): [10.24 18.9  14.36] [OK]
 [5/5] Kiểm tra tính độc lập của cửa sổ trượt (Isolated Windows)...
-      -> Train dataset: 461 mẫu cửa sổ trượt (168h -> 72h)
-      -> Val dataset:   0 mẫu (Chiều dài < 168 + 72 = 240, bỏ qua an toàn không rò rỉ)
       -> Cửa sổ trượt độc lập hoàn toàn bên trong từng phân tập: PASSED
 ----------------------------------------------------------------------
 [SUCCESS] TOÀN BỘ BÀI KIỂM THỬ DATA MODULE ĐÃ VƯỢT QUA XUẤT SẮC!
@@ -228,10 +215,10 @@ Khi thực thi câu lệnh `python tests/test_data_module.py` hoặc `python src
 | Hạng mục kiểm tra | Giá trị kỳ vọng | Giá trị thực tế đầu ra | Kết luận |
 | :--- | :--- | :--- | :---: |
 | **Lọc cảm biến gió lỗi** | Không còn giá trị $\le -9000$ | $0$ phần tử lỗi | **ĐẠT (PASSED)** |
-| **Rò rỉ thời gian Train/Val** | $\max(Train) < \min(Val)$ | $2010\text{-}01\text{-}30\text{ }03:00 < 04:00$ | **ĐẠT (PASSED)** |
-| **Rò rỉ thời gian Val/Test** | $\max(Val) < \min(Test)$ | $2010\text{-}02\text{-}05\text{ }09:00 < 10:00$ | **ĐẠT (PASSED)** |
-| **Học tham số Scaler** | `n_samples_seen_ == 700` | $700$ mẫu từ `train_df` | **ĐẠT (PASSED)** |
+| **Rò rỉ thời gian Train/Val** | $\max(Train) < \min(Val)$ | Đạt tuần tự thời gian | **ĐẠT (PASSED)** |
+| **Rò rỉ thời gian Val/Test** | $\max(Val) < \min(Test)$ | Đạt tuần tự thời gian | **ĐẠT (PASSED)** |
+| **Học tham số Scaler** | `n_samples_seen_ == 1400` | $1400$ mẫu từ `train_df` | **ĐẠT (PASSED)** |
 | **Tensor Đầu vào Quá khứ $X$** | Shape `(16, 168, 14)` | `torch.Size([16, 168, 14])` | **ĐẠT (PASSED)** |
 | **Tensor Nhãn Tương lai $Y$** | Shape `(16, 72, 1)` | `torch.Size([16, 72, 1])` | **ĐẠT (PASSED)** |
-| **Giải chuẩn hóa nhiệt độ** | Khôi phục về đơn vị $^\circ\text{C}$ | Giá trị trung bình $14.82^\circ\text{C}$ | **ĐẠT (PASSED)** |
+| **Giải chuẩn hóa nhiệt độ** | Khôi phục về đơn vị $^\circ\text{C}$ | Đúng thang độ C | **ĐẠT (PASSED)** |
 

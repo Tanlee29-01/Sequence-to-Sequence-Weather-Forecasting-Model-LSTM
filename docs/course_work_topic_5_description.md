@@ -39,18 +39,18 @@
 ### 2.1 Cấu trúc file
 
 ```text
-course_work_topic_5_LSTM_regression_jena_climate_dataset/
+course_work_topic_5/
 │
 ├── configs/                        # Thư mục chứa các file cấu hình hệ thống
-│   └── config.yaml                 # Lưu toàn bộ siêu tham số (seq_len=168, pred_len=72, batch_size, lr, d_model...)
+│   └── config.yaml                 # Lưu toàn bộ siêu tham số (seq_len=168, pred_len=72, batch_size, lr, scheduler_type, log_figure_every...)
 │
 ├── docs/                           # Tài liệu đặc tả kỹ thuật phục vụ quy trình Vibe Coding (Spec-Driven)
 │   ├── data.md                     # Đặc tả luồng xử lý dữ liệu, EDA và quy tắc chống rò rỉ (Anti-Data Leakage)
 │   ├── demo.md                     # Đặc tả thiết kế ứng dụng Demo CLI (python app.py)
 │   ├── evalution.md                # Đặc tả kịch bản đánh giá (MAE, RMSE, R2, Latency ms, RAM/VRAM & Error Analysis)
-│   ├── course_work_topic_5_decription.md # Tài liệu gốc (Master Spec) định nghĩa tổng thể dự án (Define & Design)
+│   ├── course_work_topic_5_description.md # Tài liệu gốc (Master Spec) định nghĩa tổng thể dự án (Define & Design)
 │   ├── model.md                    # Đặc tả kiến trúc 3 mô hình (Baseline Seq2Seq LSTM, Attention LSTM, Transformer)
-│   └── training.md                 # Đặc tả quy trình huấn luyện, Teacher Forcing, Early Stopping & Gradient Clipping
+│   └── training.md                 # Đặc tả quy trình huấn luyện, LR Scheduler, Teacher Forcing, Early Stopping & TensorBoard
 │
 ├── data/                           # Thư mục lưu bộ dữ liệu gốc Jena Climate (jena_climate_2009_2016.csv)
 │
@@ -58,8 +58,8 @@ course_work_topic_5_LSTM_regression_jena_climate_dataset/
 │   ├── __init__.py                 # Khởi tạo biến thư mục src thành một Python Package
 │   ├── data_module.py              # Class JenaDataModule (Resample 1h, chia Train/Val/Test, StandardScaler, Sliding Window DataLoader)
 │   ├── model_builder.py            # Class khởi tạo và quản lý 3 mô hình (Seq2SeqLSTM, Seq2SeqAttention, TimeSeriesTransformer)
-│   ├── trainer.py                  # Class ModelTrainer (Vòng lặp huấn luyện, Validation, lưu Checkpoint & đo tài nguyên RAM/VRAM)
-│   ├── logger.py                   # Class TensorBoardLogger (Ghi nhận lịch sử Train/Val Loss, Learning Rate và biểu đồ dự báo)
+│   ├── trainer.py                  # Class ModelTrainer (Vòng lặp huấn luyện, Validation, LR Scheduler, log ảnh định kỳ, lưu Checkpoint & đo RAM/VRAM)
+│   ├── logger.py                   # Class TensorBoardLogger (Ghi nhận Loss/*, Accuracy/*, LR, Hardware/*, biểu đồ dự báo, Text & HParams)
 │   ├── eda.py                      # Script phân tích khám phá dữ liệu trên tập Train (Xu hướng nhiệt độ, phân phối, Correlation Heatmap)
 │   └── evaluation.py               # Script chấm điểm trên tập Test, giải chuẩn hóa về độ C, đo tốc độ (Input -> Output) & vẽ Attention Heatmap
 │
@@ -77,15 +77,16 @@ course_work_topic_5_LSTM_regression_jena_climate_dataset/
 ├── evalution_results/              # Thư mục lưu trữ toàn bộ kết quả đầu ra sau khi chạy đánh giá trên tập Test
 │   └── evaluation_YYYYMMDD/        # Thư mục con lưu bảng chỉ số (CSV/JSON) và hình ảnh biểu đồ theo từng ngày chạy thực nghiệm
 │
-├── runs/                           # Thư mục lưu log của TensorBoard (SummaryWriter) để theo dõi quá trình hội tụ trực quan
+├── runs/                           # Thư mục lưu log TensorBoard tách riêng từng phiên (<model>_<run_name|YYYYMMDD-HHMMSS>/)
 │
-├── checkpoints/                    # Thư mục lưu file trọng số mô hình tốt nhất sau huấn luyện (.pth / .pt) và bộ Scaler (.pkl)
+├── checkpoints/                    # Thư mục lưu file trọng số mô hình (.pth: _epoch_n, _best, _last, _final)
 │
 ├── notebooks/                      # Thư mục chứa Jupyter Notebooks phục vụ chạy thử nghiệm nhanh trên Colab / Local
 │   ├── experiment_demo.ipynb       # Notebook chạy thử nghiệm mô hình, kiểm tra dự báo và đo nhanh hiệu năng
 │   └── jena_climate_eda.ipynb      # Notebook trực quan hóa dữ liệu khám phá (EDA) và kiểm thử quy trình tiền xử lý
 │
-├── main.py                         # Điểm khởi chạy chính (Entry point) điều phối toàn bộ Pipeline từ tiền xử lý đến huấn luyện & đánh giá
+├── app.py                          # Demo CLI: nạp model/checkpoint, dự báo 72h nhiệt độ, lưu biểu đồ PNG và Attention Heatmap vào evalution_results/
+├── main.py                         # Điểm khởi chạy chính (Entry point) điều phối toàn bộ Pipeline (hỗ trợ --mode, --model, --epochs, --device, --run_name)
 ├── requirements.txt                # Danh sách các thư viện cần cài đặt (torch, pandas, numpy, scikit-learn, matplotlib, tensorboard, psutil...)
 └── README.md                       # Tài liệu hướng dẫn cài đặt môi trường, cấu trúc dự án và các câu lệnh chạy chương trình
 ```

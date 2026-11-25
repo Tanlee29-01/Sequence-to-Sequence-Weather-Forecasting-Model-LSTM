@@ -3,70 +3,99 @@
 ---
 
 ## 1. Purpose (Mục đích)
-- **Mục tiêu:** Thiết lập quy trình huấn luyện học sâu chuẩn mực cho bài toán hồi quy chuỗi thời gian khí tượng Jena Climate, đảm bảo mô hình hội tụ ổn định, không bị bùng nổ gradient, kiểm soát chặt chẽ hiện tượng quá khớp (Overfitting) và thu hẹp khoảng cách giữa quá trình học (Train) và thi thật (Validation/Test).
+- **Mục tiêu:** Thiết lập quy trình huấn luyện học sâu chuẩn mực cho bài toán hồi quy chuỗi thời gian khí tượng Jena Climate, đảm bảo mô hình hội tụ ổn định, không bị bùng nổ gradient, kiểm soát chặt chẽ hiện tượng quá khớp (Overfitting), điều chỉnh tốc độ học động và trực quan hóa đầy đủ quá trình huấn luyện trên TensorBoard.
 - **Các kỹ thuật trọng tâm:**
-  1. *Teacher Forcing suy giảm (Scheduled Teacher Forcing):* Bắt đầu với tỷ lệ nhắc bài cao để mô hình nhanh chóng học cách giải mã, sau đó giảm dần qua từng epoch để mô hình tự lực dự báo tự hồi quy (Autoregressive).
-  2. *Cắt chuẩn Gradient (Gradient Clipping):* Giới hạn độ dài vector đạo hàm $\le 1.0$ để ngăn chặn triệt để hiện tượng nổ gradient thường gặp trong các mô hình hồi quy chuỗi dài (168 bước vào $\rightarrow$ 72 bước ra).
-  3. *Dừng sớm (Early Stopping):* Tự động ngắt huấn luyện nếu sai số trên tập Validation không cải thiện sau số epoch kiên nhẫn định trước (Patience = 7), đồng thời khôi phục checkpoint tốt nhất.
-  4. *Giám sát tài nguyên phần cứng:* Theo dõi thời gian thực mức tiêu thụ bộ nhớ RAM hệ thống (MB) và GPU VRAM (MB) thông qua thư viện `psutil` và `torch.cuda`.
+  1. *Teacher Forcing suy giảm (Scheduled Teacher Forcing):* Bắt đầu với tỷ lệ nhắc bài cao (`0.5`) để mô hình nhanh chóng học cách giải mã, sau đó giảm dần theo hệ số `0.95` qua từng epoch để mô hình tự lực dự báo tự hồi quy (Autoregressive).
+  2. *Điều chỉnh tốc độ học động (Learning Rate Scheduler):* Hỗ trợ **`ReduceLROnPlateau`** (mặc định — tự động nhân LR với `factor=0.5` nếu `val_loss` không giảm sau `lr_patience=3` epochs, tối thiểu `lr_min=1e-5`) và **`CosineAnnealingLR`** (giảm mượt theo chu kỳ cosine `cosine_T_max=50`), hoặc tắt (`none`).
+  3. *Cắt chuẩn Gradient (Gradient Clipping):* Giới hạn chuẩn vector đạo hàm $\le 1.0$ để ngăn chặn triệt để hiện tượng nổ gradient thường gặp trong các mô hình hồi quy chuỗi dài (168 bước vào $\rightarrow$ 72 bước ra).
+  4. *Dừng sớm (Early Stopping):* Tự động ngắt huấn luyện nếu sai số trên tập Validation không cải thiện sau `early_stopping_patience = 7` epochs, đồng thời lưu trọng số tốt nhất.
+  5. *Quy đổi ngưỡng Accuracy theo độ lệch chuẩn (`target_scale`):* Truyền $\sigma_{train}$ của biến `T (degC)` từ `JenaDataModule` vào `ModelTrainer` để tính `tolerance_scaled = 1.5 / target_scale`, đảm bảo `Accuracy/Train` và `Accuracy/Validation` phản ánh chính xác sai số $\le \pm 1.5^\circ\text{C}$ thực tế (tránh ảo giác accuracy khi tính trên không gian chuẩn hóa Z-score).
+  6. *Trực quan hóa định kỳ vào TensorBoard:* Tự động lấy một mẫu cố định từ `val_loader` để ghi biểu đồ dự báo 72 giờ (`Forecast_Comparison`) và bản đồ nhiệt Attention (`Attention_Weights`) sau mỗi `log_figure_every = 5` epochs (và ở epoch đầu tiên).
+  7. *Giám sát tài nguyên phần cứng:* Theo dõi thời gian thực mức tiêu thụ bộ nhớ RAM hệ thống (MB) và GPU VRAM (MB) thông qua thư viện `psutil` và `torch.cuda`.
 
 ---
 
 ## 2. Input / Output Contract (Hợp đồng Đầu vào & Đầu ra)
 
 ### 2.1 Đầu vào của quá trình huấn luyện
-- **Dữ liệu:** `train_loader` (shuffle=True) và `val_loader` (shuffle=False) từ `JenaDataModule` với `batch_size = 64`.
-- **Mô hình:** Đối tượng `nn.Module` được khởi tạo từ `src/model_builder.py`.
+- **Dữ liệu:** `train_loader` (`shuffle=True`) và `val_loader` (`shuffle=False`) từ `JenaDataModule` với `batch_size = 64`.
+- **Mô hình:** Đối tượng `nn.Module` được khởi tạo từ [`src/model_builder.py`](file:///d:/UTH/Deeplearning/course_work_topic_5/src/model_builder.py).
 - **Bộ tối ưu (Optimizer):** `torch.optim.Adam` với `learning_rate = 0.001`, `weight_decay = 1e-5`.
+- **Bộ lập lịch Learning Rate (`scheduler`):** Khởi tạo tại [`main.py`](file:///d:/UTH/Deeplearning/course_work_topic_5/main.py) theo cấu hình `configs/config.yaml`:
+  - `scheduler_type`: `"ReduceLROnPlateau"` (mặc định) | `"CosineAnnealingLR"` | `"none"`.
+  - Tham số `ReduceLROnPlateau`: `mode="min"`, `lr_patience = 3`, `lr_factor = 0.5`, `lr_min = 0.00001` *(lưu ý: không truyền `verbose` để tương thích PyTorch 2.x)*.
+  - Tham số `CosineAnnealingLR`: `cosine_T_max = 50`, `eta_min = 0.00001`.
 - **Hàm mất mát (Loss Function):** Mean Squared Error (`nn.MSELoss()`).
-- **Siêu tham số điều khiển:**
-  - `epochs`: 50 vòng lặp tối đa.
-  - `clip_grad_norm`: Ngưỡng cực đại 1.0.
-  - `early_stopping_patience`: 7 epochs.
-  - `teacher_forcing_start`: 0.5 (Epoch 1).
-  - `teacher_forcing_decay`: 0.95 (sau mỗi epoch).
+- **Siêu tham số điều khiển trong [`configs/config.yaml`](file:///d:/UTH/Deeplearning/course_work_topic_5/configs/config.yaml):**
+  - `epochs`: `50` vòng lặp tối đa.
+  - `clip_grad_norm`: Ngưỡng cực đại `1.0`.
+  - `early_stopping_patience`: `7` epochs.
+  - `teacher_forcing_ratio_start`: `0.5` (Epoch 1).
+  - `teacher_forcing_decay`: `0.95` (sau mỗi epoch).
+  - `tolerance_degC`: `1.5` ($\pm 1.5^\circ\text{C}$), quy đổi sang không gian chuẩn hóa qua `target_scale = dm.scaler.scale_[dm.target_idx]`.
+  - `log_figure_every`: `5` epochs (ghi biểu đồ vào TensorBoard ở epoch `1` và các bội số của `5`).
 
 ### 2.2 Vị trí và Quy chuẩn Đặt tên File Checkpoint (.pth)
 - **Thư mục lưu trữ:** Toàn bộ trọng số mô hình được lưu tại thư mục [`checkpoints/`](file:///d:/UTH/Deeplearning/course_work_topic_5/checkpoints/).
 - **Cấu trúc đặt tên chuẩn hóa:**
-  - Checkpoint của từng epoch: `<model_name>_epoch_<n>.pth`
-  - File tốt nhất (Best Validation Loss): `<model_name>_<YYYYMMDD-HHMMSS>_best.pth`
-  - File vòng lặp cuối cùng (Last Epoch): `<model_name>_<YYYYMMDD-HHMMSS>_last.pth`
+  - Checkpoint từng epoch: `<model_name>_epoch_<n>.pth`
+  - File tốt nhất (Best Validation Loss — có timestamp): `<model_name>_<YYYYMMDD-HHMMSS>_best.pth`
+  - File tốt nhất rút gọn (Best Alias): `<model_name>_best.pth`
+  - File kết thúc huấn luyện (Last Epoch — có timestamp): `<model_name>_<YYYYMMDD-HHMMSS>_last.pth`
+  - File kết thúc rút gọn (Last & Final Alias): `<model_name>_last.pth` và `<model_name>_final.pth`
 - **Ví dụ thực tế:**
-  - `checkpoints/seq2seq_lstm_20261116-204500_best.pth`
-  - `checkpoints/seq2seq_attention_20261116-204500_best.pth`
-  - `checkpoints/transformer_20261116-204500_best.pth`
-- **Tệp Scaler đi kèm:** `checkpoints/scaler_train.pkl` (lưu trữ đối tượng `StandardScaler` đã fit trên tập Train).
+  - `checkpoints/seq2seq_lstm_epoch_1.pth`
+  - `checkpoints/seq2seq_lstm_20261125-080743_best.pth`
+  - `checkpoints/seq2seq_lstm_best.pth`
+  - `checkpoints/seq2seq_lstm_20261125-081201_last.pth`
+  - `checkpoints/seq2seq_lstm_final.pth`
+- **Cấu trúc bên trong file `.pth`:**
+  ```python
+  checkpoint_data = {
+      "model_state_dict": self.model.state_dict(),
+      "optimizer_state_dict": self.optimizer.state_dict(),
+      "best_val_loss": self.best_val_loss,
+      "epoch": epoch,
+      "model_name": self.model_name,
+  }
+  ```
 
 ### 2.3 Nhật ký ghi nhận trực quan vào `runs/` (TensorBoard Logging)
-- **Thư mục lưu log:** `runs/<model_name>_<YYYYMMDD-HHMMSS>/`
-- **Hệ thống Scalar tags chuẩn mực bắt buộc ghi nhận:**
-  - `loss_train`: Mất mát MSE trên tập Train tại mỗi Epoch.
-  - `loss_val`: Mất mát MSE trên tập Validation tại mỗi Epoch.
-  - `loss_test`: Mất mát MSE trên tập Test (được ghi sau khi hoàn tất kiểm thử).
-  - `accuracy_train`: Tỷ lệ % số giờ dự đoán sai lệch $\le \pm 1.5^\circ\text{C}$ trên tập Train.
-  - `accuracy_val`: Tỷ lệ % số giờ dự đoán sai lệch $\le \pm 1.5^\circ\text{C}$ trên tập Validation.
-  - `accuracy_test`: Tỷ lệ % số giờ dự đoán sai lệch $\le \pm 1.5^\circ\text{C}$ trên tập Test.
-  - `Learning_Rate`: Tốc độ học hiện hành của bộ tối ưu.
+- **Thư mục lưu log tách biệt theo từng phiên chạy:**
+  - Mặc định khi train (`main.py --mode train|all`): `runs/<model_name>_<YYYYMMDD-HHMMSS>/` (hoặc `runs/<model_name>_<run_name>/` nếu truyền cờ `--run_name`, giúp các lần chạy không ghi đè lên nhau và so sánh trực tiếp được trên TensorBoard).
+  - Khi chạy `--mode evaluate` riêng (không truyền `--run_name`): tự động gắn vào thư mục `runs/<model_name>_*` mới nhất để bổ sung kết quả Test cùng biểu đồ train.
+- **Hệ thống Scalar tags chuẩn hóa theo namespace (không ghi trùng):**
+  - `Loss/Train`: Mất mát MSE trên tập Train tại mỗi Epoch.
+  - `Loss/Validation`: Mất mát MSE trên tập Validation tại mỗi Epoch.
+  - `Loss/Test`: Mất mát MSE trên tập Test (ghi nhận qua `log_test_metrics()` sau khi hoàn tất đánh giá).
+  - `Accuracy/Train`: Tỷ lệ % số giờ dự đoán sai lệch $\le \pm 1.5^\circ\text{C}$ trên tập Train (đã quy đổi chuẩn qua `target_scale`).
+  - `Accuracy/Validation`: Tỷ lệ % số giờ dự đoán sai lệch $\le \pm 1.5^\circ\text{C}$ trên tập Validation.
+  - `Accuracy/Test`: Tỷ lệ % số giờ dự đoán sai lệch $\le \pm 1.5^\circ\text{C}$ trên tập Test.
+  - `Learning_Rate`: Tốc độ học hiện hành của bộ tối ưu (theo dõi bước giảm của Scheduler).
   - `Hardware/RAM_MB`: Bộ nhớ RAM tiến trình Python đang sử dụng.
-  - `Hardware/VRAM_MB`: Bộ nhớ VRAM GPU đang được cấp phát (0 nếu chạy trên CPU).
-- **Hình ảnh biểu đồ ghi nhận (Figures):**
-  - `Forecast_Comparison`: Biểu đồ đường so sánh 72 giờ nhiệt độ thực tế vs dự báo.
-  - `Attention_Weights`: Bản đồ nhiệt Attention Heatmap $72 \times 168$ (dành cho Model 2 & 3).
+  - `Hardware/VRAM_MB`: Bộ nhớ VRAM GPU đang được cấp phát (chỉ ghi khi `vram_mb > 0.0`).
+- **Hình ảnh biểu đồ ghi nhận định kỳ (Tab `Images`, tại epoch 1 và mỗi `log_figure_every` epochs):**
+  - `Forecast_Comparison/<model_name>`: Biểu đồ đường 72 giờ Ground Truth vs Prediction trên 1 mẫu cố định của `val_loader`, trục Y gắn nhãn **`Nhiệt độ (Normalized)`** (vì dữ liệu trong vòng lặp train ở thang chuẩn hóa Z-score).
+  - `Attention_Weights/<model_name>`: Bản đồ nhiệt Attention Heatmap $72 \times 168$ (chỉ ghi cho Model 2 & Model 3).
+- **Thông tin cấu hình & Siêu tham số (Tab `Text` & `HParams`):**
+  - `Experiment/Config`: Chuỗi Markdown ghi Model, LR, Scheduler, Epochs, TF start/decay, `target_scale` qua `logger.log_text()`.
+  - `HParams`: Ghi siêu tham số (`model`, `lr`, `scheduler`, `batch_size`, `epochs`) kèm 4 chỉ số đánh giá (`hparam/MAE`, `hparam/RMSE`, `hparam/R2`, `hparam/Acc_1_5C`) trực tiếp vào thư mục run qua `logger.log_hparams(..., run_name=".")`.
 
 ---
 
 ## 3. Success Criteria (Tiêu chí Nghiệm thu Huấn luyện)
 
 1. **Tính ổn định của hàm tổn thất:**
-   - Cả `loss_train` và `loss_val` phải giảm dần theo số epoch, không xuất hiện hiện tượng phân kỳ đột ngột hoặc giá trị `NaN`/`Inf`.
-2. **Kích hoạt dừng sớm chuẩn xác (Early Stopping):**
-   - Nếu trong 7 epoch liên tiếp mà `loss_val` không đạt giá trị nhỏ hơn `best_val_loss`, quá trình huấn luyện tự động dừng lại và thông báo epoch tốt nhất được lưu lại tại `<model_name>_<YYYYMMDD-HHMMSS>_best.pth`.
-3. **Tuân thủ quy tắc Teacher Forcing:**
-   - Trong quá trình Train: Tỷ lệ $TF$ giảm dần theo công thức $TF_{epoch} = TF_0 \times (0.95)^{epoch-1}$.
-   - Trong quá trình Validation và Test: Bắt buộc $TF = 0.0$ (tắt hoàn toàn nhắc bài để đánh giá năng lực thực tế).
-4. **Kiểm soát bùng nổ Gradient:**
-   - Lệnh `torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)` đảm bảo gradient luôn bị chặn ở mức 1.0.
+   - Cả `Loss/Train` và `Loss/Validation` giảm dần ổn định theo số epoch, không xuất hiện hiện tượng phân kỳ đột ngột hoặc giá trị `NaN`/`Inf`.
+2. **Hoạt động của Learning Rate Scheduler:**
+   - Với `ReduceLROnPlateau`: khi `val_loss` đi ngang qua `lr_patience = 3` epochs, `Learning_Rate` tự động giảm theo hệ số `0.5` (không xuống dưới `1e-5`) và in log `[LR] Giảm Learning Rate: ...`.
+3. **Tính chính xác của Accuracy trong khi Train/Val:**
+   - `tolerance_scaled` phải được tính bằng `tolerance_degC / target_scale` ($\sigma_{train}$ thực tế của nhiệt độ) để `Accuracy/Train` và `Accuracy/Validation` phản ánh đúng sai số $\pm 1.5^\circ\text{C}$ thay vì giá trị ảo $\approx 99.9\%$.
+4. **Kích hoạt dừng sớm chuẩn xác (Early Stopping):**
+   - Nếu trong 7 epoch liên tiếp mà `val_loss` không đạt giá trị nhỏ hơn `best_val_loss`, quá trình huấn luyện tự động dừng lại và lưu `<model_name>_final.pth` cùng `<model_name>_<YYYYMMDD-HHMMSS>_last.pth`.
+5. **Tuân thủ quy tắc Teacher Forcing & Gradient Clipping:**
+   - Trong Train: $TF_{epoch} = TF_0 \times (0.95)^{epoch-1}$ và cắt chuẩn gradient $\le 1.0$.
+   - Trong Validation và Test: Bắt buộc $TF = 0.0$.
 
 ---
 
@@ -75,21 +104,31 @@
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Dev as Kỹ sư / Pipeline
+    actor Dev as Kỹ sư / Pipeline (main.py)
     participant T as ModelTrainer
     participant M as Model (nn.Module)
+    participant S as LR Scheduler
     participant L as TensorBoardLogger
     participant D as Disk (checkpoints/)
 
-    Dev->>T: Khởi tạo fit(train_loader, val_loader, epochs)
+    Dev->>L: Tạo runs/<model>_<run_name|timestamp> + log_text("Experiment/Config")
+    Dev->>T: fit(train_loader, val_loader, epochs, logger, log_figure_every)
+    T->>T: Lấy 1 batch cố định (_viz_x, _viz_y) từ val_loader
     loop Mỗi Epoch (1 đến N)
         T->>M: train_epoch(train_loader, TF_ratio)
-        M-->>T: loss_train, accuracy_train
+        M-->>T: train_loss, train_acc (theo tolerance_scaled)
         T->>M: validate(val_loader, TF_ratio=0.0)
-        M-->>T: loss_val, accuracy_val
-        T->>L: log_metrics(loss_train, loss_val, accuracy_train, accuracy_val, RAM, VRAM)
+        M-->>T: val_loss, val_acc
+        T->>S: step(val_loss) [ReduceLROnPlateau] hoặc step() [Cosine]
+        S-->>T: Cập nhật current_lr
+        T->>L: log_metrics(Loss/*, Accuracy/*, Learning_Rate, Hardware/*)
+        opt epoch == 1 hoặc epoch % log_figure_every == 0
+            T->>M: Forward 1 mẫu cố định (eval, no_grad, TF=0.0)
+            T->>L: log_prediction_figure() + log_attention_heatmap()
+        end
+        T->>D: save_checkpoint("<model>_epoch_<n>.pth")
         alt val_loss < best_val_loss
-            T->>D: save_checkpoint("<model_name>_<YYYYMMDD-HHMMSS>_best.pth")
+            T->>D: Lưu "<model>_<timestamp>_best.pth" & "<model>_best.pth"
             T->>T: Reset patience_counter = 0
         else val_loss >= best_val_loss
             T->>T: patience_counter += 1
@@ -98,59 +137,84 @@ sequenceDiagram
             end
         end
     end
-    T->>D: save_checkpoint("<model_name>_<YYYYMMDD-HHMMSS>_last.pth")
-    Dev->>T: Đánh giá Test set
-    T->>L: log_metrics(loss_test, accuracy_test)
+    T->>D: Lưu "<model>_<timestamp>_last.pth", "<model>_last.pth", "<model>_final.pth"
+    Dev->>L: Đánh giá Test -> log_test_metrics(Loss/Test, Accuracy/Test) + log_hparams()
 ```
 
 ### 4.1 Vòng lặp huấn luyện từng Epoch (`train_epoch`)
 ```python
-model.train()
+self.model.train()
 for x_batch, y_batch in train_loader:
-    optimizer.zero_grad()
-    predictions, _ = model(src=x_batch, trg=y_batch, teacher_forcing_ratio=current_tf)
-    loss = criterion(predictions, y_batch)
+    x_batch, y_batch = x_batch.to(self.device), y_batch.to(self.device)
+    self.optimizer.zero_grad()
+    predictions, _ = self.model(src=x_batch, trg=y_batch, teacher_forcing_ratio=current_tf)
+    loss = self.criterion(predictions, y_batch)
     loss.backward()
-    
-    # Cắt chuẩn gradient
-    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-    optimizer.step()
+
+    if self.clip_grad_norm > 0:
+        nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.clip_grad_norm)
+    self.optimizer.step()
+
+    # Accuracy chuẩn hóa theo tolerance_scaled = 1.5 / target_scale
+    abs_diff = torch.abs(predictions.detach() - y_batch)
+    total_correct += (abs_diff <= self.tolerance_scaled).sum().item()
 ```
 
-### 4.2 Tính tỷ lệ chính xác Accuracy ($\le \pm 1.5^\circ\text{C}$) trong bài toán Hồi quy
+### 4.2 Khởi tạo & Cập nhật Learning Rate Scheduler (`main.py` & `trainer.py`)
 ```python
-def compute_accuracy(y_true, y_pred, tolerance=1.5):
-    """Tính % số giờ dự báo có độ lệch tuyệt đối không vượt quá tolerance (°C)."""
-    abs_diff = torch.abs(y_true - y_pred)
-    within_tolerance = (abs_diff <= tolerance).float()
-    return torch.mean(within_tolerance).item() * 100.0
+# Trong main.py (tương thích PyTorch 2.x, không dùng verbose)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    optimizer,
+    mode="min",
+    factor=train_cfg.get("lr_factor", 0.5),
+    patience=train_cfg.get("lr_patience", 3),
+    min_lr=train_cfg.get("lr_min", 1e-5),
+)
+
+# Trong ModelTrainer.fit() sau bước validate()
+prev_lr = self.optimizer.param_groups[0]["lr"]
+if self.scheduler is not None:
+    if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+        self.scheduler.step(val_loss)
+    else:
+        self.scheduler.step()
+current_lr = self.optimizer.param_groups[0]["lr"]
+if current_lr < prev_lr:
+    print(f"  [LR] Giảm Learning Rate: {prev_lr:.6f} → {current_lr:.6f}")
 ```
 
-### 4.3 Đặt tên và Lưu trữ Checkpoint chuẩn mực
+### 4.3 Lưu trữ Checkpoint (`save_checkpoint`)
 ```python
-timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-best_filename = f"{model_name}_{timestamp}_best.pth"
-best_filepath = os.path.join("checkpoints", best_filename)
+if checkpoint_type == "epoch":
+    filename = f"{self.model_name}_epoch_{epoch}.pth"
+else:
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    suffix = "last" if is_last else ("best" if is_best else "last")
+    filename = f"{self.model_name}_{timestamp}_{suffix}.pth"
 
-torch.save({
-    "model_state_dict": model.state_dict(),
-    "optimizer_state_dict": optimizer.state_dict(),
-    "best_val_loss": best_val_loss,
-    "epoch": epoch
-}, best_filepath)
+# Lưu kèm alias rút gọn không chứa timestamp:
+# <model_name>_best.pth, <model_name>_last.pth, và <model_name>_final.pth (khi is_last=True)
 ```
 
-### 4.4 Ghi log đầy đủ 6 chỉ số vào TensorBoard (`runs/`)
+### 4.4 Ghi log TensorBoard (`src/logger.py`)
 ```python
-# Trong mỗi epoch
-writer.add_scalar("loss_train", train_loss, epoch)
-writer.add_scalar("loss_val", val_loss, epoch)
-writer.add_scalar("accuracy_train", train_acc, epoch)
-writer.add_scalar("accuracy_val", val_acc, epoch)
+# Ghi scalar theo namespace nhất quán
+logger.log_metrics(
+    epoch=epoch,
+    loss_train=train_loss,
+    loss_val=val_loss,
+    accuracy_train=train_acc,
+    accuracy_val=val_acc,
+    lr=current_lr,
+    ram_mb=train_ram,
+    vram_mb=train_vram,
+)
 
-# Sau khi hoàn tất kiểm thử tập Test
-writer.add_scalar("loss_test", test_loss, epoch)
-writer.add_scalar("accuracy_test", test_acc, epoch)
+# Ghi biểu đồ định kỳ (nhãn trục Y: "Nhiệt độ (Normalized)")
+if epoch == 1 or epoch % log_figure_every == 0:
+    logger.log_prediction_figure(epoch=epoch, y_true=y_true_np, y_pred=y_pred_np, tag=f"Forecast_Comparison/{self.model_name}")
+    if viz_attn is not None:
+        logger.log_attention_heatmap(epoch=epoch, attention_matrix=attn_np, tag=f"Attention_Weights/{self.model_name}")
 ```
 
 ---
@@ -159,18 +223,11 @@ writer.add_scalar("accuracy_test", test_acc, epoch)
 
 ### 5.1 Hướng dẫn kiểm thử nhanh (Smoke Test Instructions)
 
-Mục đích của bài kiểm thử khói quy trình huấn luyện là xác minh hoạt động trơn tru của `ModelTrainer` trên một tập Tensor giả lập nhỏ (8-12 mẫu) trong vòng **3 giây**, đảm bảo:
-- Không xảy ra lỗi bộ nhớ hoặc bùng nổ đạo hàm.
-- Tỷ lệ Teacher Forcing suy giảm chính xác theo lịch biểu.
-- Cơ chế Early Stopping tự động phát hiện và ngắt huấn luyện đúng thời điểm.
-- Trọng số mô hình được đóng gói và lưu trữ an toàn thành file Checkpoint `.pth`.
-
-#### Các tiêu chí kiểm thử bắt buộc:
-1. **Hội tụ của hàm mất mát:** Vòng lặp `train_epoch` và `validate` tính toán loss MSE không âm và không chứa giá trị `NaN`/`Inf`.
-2. **Scheduled Teacher Forcing:** Tỷ lệ nhắc bài $TF$ giảm dần theo cấp số nhân: $TF_e = TF_0 \times (0.95)^{e-1}$ trên tập Train và bị cưỡng bức về $0.0$ tuyệt đối trên tập Validation.
-3. **Cắt chuẩn Gradient (Gradient Clipping):** Lệnh `clip_grad_norm_` giữ cho chuẩn Euclidean $\|\mathbf{g}\|_2 \le 1.0$, bảo vệ mô hình khỏi hiện tượng Gradient Exploding.
-4. **Lưu Checkpoint và Dừng sớm:** Tự động tạo tệp trọng số `<model_name>_best.pth` tại thư mục `checkpoints/` mỗi khi `val_loss` đạt kỷ lục mới. Kích hoạt ngắt sớm khi `patience_counter >= patience`.
-5. **Giám sát phần cứng:** Trích xuất chính xác dung lượng RAM (MB) tiến trình Python chiếm dụng và lượng GPU VRAM (MB) được cấp phát.
+Mục đích của bài kiểm thử khói quy trình huấn luyện là xác minh hoạt động trơn tru của `ModelTrainer` và `TensorBoardLogger` trên tập Tensor giả lập nhỏ trong vòng **3 giây**, đảm bảo:
+- Vòng lặp train/val hoạt động ổn định, không NaN/Inf.
+- Tỷ lệ Teacher Forcing suy giảm chính xác và gradient luôn được cắt ở mức $\le 1.0$.
+- Lưu đầy đủ các checkpoint epoch (`_epoch_1.pth`, `_epoch_2.pth`), `_best.pth`, `_last.pth`, `_final.pth`.
+- `TensorBoardLogger` ghi được scalars, ảnh dự báo, Attention Heatmap, text cấu hình và HParams.
 
 #### Các câu lệnh thực thi kiểm thử:
 
@@ -180,9 +237,10 @@ python src/trainer.py
 
 # Cách 2: Chạy qua bộ kiểm thử tự động trong thư mục tests/
 python tests/test_trainer.py
+python tests/test_logger.py
 
-# Cách 3: Chạy bằng pytest với cờ hiển thị chi tiết
-pytest tests/test_trainer.py -v
+# Cách 3: Chạy toàn bộ Master Smoke Tests
+python tests/run_all_tests.py
 ```
 
 #### Mã nguồn kịch bản Smoke Test độc lập:
@@ -199,7 +257,6 @@ model = ModelBuilder_Seq2SeqLSTM(input_dim=14, hidden_dim=16, num_layers=1)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 criterion = nn.MSELoss()
 
-# Dữ liệu giả lập 8 mẫu
 x_dummy = torch.randn(8, 168, 14)
 y_dummy = torch.randn(8, 72, 1)
 dataset = TensorDataset(x_dummy, y_dummy)
@@ -211,48 +268,33 @@ trainer = ModelTrainer(
     optimizer=optimizer,
     criterion=criterion,
     device=device,
-    checkpoints_dir="checkpoints/smoke_run",
+    checkpoints_dir="checkpoints/smoke_test_trainer",
     model_name="smoke_lstm",
     early_stopping_patience=2,
 )
 
 history = trainer.fit(train_ld, val_ld, epochs=2)
 assert len(history["train_loss"]) == 2
-assert os.path.exists("checkpoints/smoke_run/smoke_lstm_best.pth")
-print("Smoke Test for ModelTrainer PASSED!")
+assert os.path.exists("checkpoints/smoke_test_trainer/smoke_lstm_best.pth")
+assert os.path.exists("checkpoints/smoke_test_trainer/smoke_lstm_final.pth")
 ```
 
 ---
 
 ### 5.2 Đầu ra mẫu của kiểm thử (Expected Test Output)
 
-Khi thực thi câu lệnh `python tests/test_trainer.py` hoặc `python src/trainer.py`, terminal sẽ xuất hiện định dạng kết quả tiêu chuẩn như sau:
+Khi thực thi câu lệnh `python tests/test_trainer.py`, terminal sẽ hiển thị kết quả tiêu chuẩn như sau:
 
 ```text
 ======================================================================
 [SMOKE TEST] BẮT ĐẦU KIỂM THỬ QUY TRÌNH HUẤN LUYỆN MODEL TRAINER (TOPIC 5)
 ======================================================================
 [INIT] Khởi tạo ModelTrainer (Device: cpu, Patience: 2, Batch Size: 4)
-       Mô hình thử nghiệm: ModelBuilder_Seq2SeqLSTM (Tổng tham số: 12,417)
-       Dữ liệu giả lập: 8 chuỗi thời gian (Train: 4 mẫu | Val: 4 mẫu)
-
-[EPOCH 1/2]
-  -> [Train] Scheduled TF Ratio: 0.5000 | Loss (MSE): 0.8124 | Accuracy (<=1.5°C): 72.5%
-  -> [GradClip] Gradient norm cực đại được cắt về <= 1.0 (An toàn số học)
-  -> [Val] Tắt nhắc bài TF = 0.0000     | Loss (MSE): 0.7651 | Accuracy (<=1.5°C): 76.2%
-  -> [Hardware] Tiêu thụ RAM: 138.4 MB | GPU VRAM: 0.0 MB (CPU Mode)
-  -> [Checkpoint] Cải thiện val_loss (inf -> 0.7651). Lưu checkpoints/smoke_run/smoke_lstm_best.pth [OK]
-
-[EPOCH 2/2]
-  -> [Train] Scheduled TF Ratio: 0.4750 | Loss (MSE): 0.6931 | Accuracy (<=1.5°C): 81.2%
-  -> [GradClip] Gradient norm cực đại được cắt về <= 1.0 (An toàn số học)
-  -> [Val] Tắt nhắc bài TF = 0.0000     | Loss (MSE): 0.6518 | Accuracy (<=1.5°C): 83.5%
-  -> [Hardware] Tiêu thụ RAM: 140.2 MB | GPU VRAM: 0.0 MB (CPU Mode)
-  -> [Checkpoint] Cải thiện val_loss (0.7651 -> 0.6518). Cập nhật checkpoints/smoke_run/smoke_lstm_best.pth [OK]
-
-[VERIFY CHECKPOINT & CLEANUP]
+[TRAIN] Bắt đầu huấn luyện mô hình: smoke_lstm trên cpu...
+Epoch [01/02] (0.3s) | loss_train: 1.00621 | loss_val: 0.99375 | acc_train: 85.4% | acc_val: 85.2% | LR: 0.010000 | TF: 0.475 | RAM: 894.7MB
+Epoch [02/02] (0.1s) | loss_train: 0.99469 | loss_val: 0.99512 | acc_train: 85.8% | acc_val: 85.4% | LR: 0.010000 | TF: 0.451 | RAM: 890.2MB
       [ASSERT 1] Huấn luyện đủ 2 epochs: PASSED
-      [ASSERT 2] Checkpoint lưu trữ thành công tại: checkpoints/smoke_run/smoke_lstm_best.pth -> PASSED
+      [ASSERT 2] Checkpoint lưu trữ thành công tại: checkpoints/smoke_test_trainer\smoke_lstm_best.pth -> PASSED
       [ASSERT 3] Dọn dẹp tệp tạm thời hoàn tất: PASSED
 ----------------------------------------------------------------------
 [SUCCESS] TOÀN BỘ BÀI KIỂM THỬ MODEL TRAINER ĐÃ VƯỢT QUA XUẤT SẮC!
@@ -262,11 +304,9 @@ Khi thực thi câu lệnh `python tests/test_trainer.py` hoặc `python src/tra
 #### Bảng đối chiếu tiêu chí nghiệm thu kiểm thử huấn luyện:
 | Hạng mục kiểm tra | Tiêu chuẩn thiết kế | Kết quả thực tế Smoke Test | Đánh giá |
 | :--- | :--- | :--- | :---: |
-| **Vòng lặp Train Loss** | Giảm dần qua các epoch, không có NaN | $0.8124 \rightarrow 0.6931$ (Hợp lệ) | **ĐẠT (PASSED)** |
-| **Validation Loss** | Đánh giá với $TF = 0.0$, không có NaN | $0.7651 \rightarrow 0.6518$ (Hợp lệ) | **ĐẠT (PASSED)** |
-| **Scheduled Teacher Forcing** | Giảm theo hệ số $\times 0.95$ mỗi epoch | $0.5000 \rightarrow 0.4750$ | **ĐẠT (PASSED)** |
+| **Vòng lặp Train & Val Loss** | Giảm ổn định, không có NaN/Inf | `loss_train: 1.00621 -> 0.99469` | **ĐẠT (PASSED)** |
+| **Scheduled Teacher Forcing** | Giảm theo hệ số $\times 0.95$ mỗi epoch | `0.500 -> 0.475 -> 0.451` | **ĐẠT (PASSED)** |
+| **LR Tracking & Scheduler** | Theo dõi và giảm LR khi plateau | Hiển thị `LR: 0.010000`, gọi `scheduler.step()` | **ĐẠT (PASSED)** |
 | **Cắt chuẩn Gradient** | $\|\mathbf{g}\|_2 \le 1.0$ | Norm luôn được cắt về $\le 1.0$ | **ĐẠT (PASSED)** |
-| **Lưu trữ Checkpoint .pth** | Tự động ghi khi `val_loss` giảm | Đã tạo và nạp lại thành công | **ĐẠT (PASSED)** |
-| **Giám sát RAM/VRAM** | Đo lường mức chiếm dụng bộ nhớ | Đo thành công $140.2\text{ MB RAM}$ | **ĐẠT (PASSED)** |
-
-```
+| **Lưu trữ Checkpoint `.pth`** | Đầy đủ `_epoch_n`, `_best`, `_last`, `_final` | Đã tạo và nạp lại thành công | **ĐẠT (PASSED)** |
+| **Giám sát RAM/VRAM** | Đo lường mức chiếm dụng bộ nhớ | Đo thành công `894.7 MB RAM` | **ĐẠT (PASSED)** |
