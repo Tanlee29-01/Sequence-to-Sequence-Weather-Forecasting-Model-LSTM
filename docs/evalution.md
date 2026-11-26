@@ -15,22 +15,22 @@
 ## 2. Input / Output Contract (Hợp đồng Đầu vào & Đầu ra)
 
 ### 2.1 Đầu vào của quy trình đánh giá
-- **File Checkpoint mô hình:** Tự động tìm tệp tốt nhất khớp mẫu `<model_name>*_best.pth` trong thư mục [`checkpoints/`](file:///d:/UTH/Deeplearning/course_work_topic_5/checkpoints/) (ưu tiên alias `<model_name>_best.pth` hoặc bản `<model_name>_<YYYYMMDD-HHMMSS>_best.pth` mới nhất).
-  - Ví dụ: `checkpoints/seq2seq_attention_best.pth` hoặc `checkpoints/seq2seq_attention_20261125-082507_best.pth`
+- **File Checkpoint mô hình:** Hỗ trợ chỉ định phiên bản trực tiếp qua `--model <model_name>_v<N>` (ví dụ `seq2seq_attention_v1`, `seq2seq_attention_v2`, `seq2seq_attention_v3`) hoặc truyền file cụ thể qua `--checkpoint <path>`. Nếu không truyền hậu tố `_vN`, hệ thống tự động chọn phiên bản lớn nhất hiện có và nạp tệp `<base_model>_best.pth` hoặc `*_best.pth` mới nhất trong [`checkpoints/<model_name>_v<N>/`](file:///d:/UTH/Deeplearning/course_work_topic_5/checkpoints/). Đồng thời tự động đọc `config.json` của phiên bản đó để tái tạo đúng kiến trúc mạng.
+  - Ví dụ: `checkpoints/seq2seq_attention_v1/seq2seq_attention_20261121-080327_best.pth` hoặc `checkpoints/seq2seq_attention_v2/seq2seq_attention_best.pth`
 - **Tập dữ liệu kiểm thử:** `test_loader` từ `JenaDataModule` với `batch_size = 64` (không shuffle, giữ nguyên thứ tự dòng thời gian).
 - **Hàm giải chuẩn hóa:** Phương thức `inverse_transform_target` của `JenaDataModule` sử dụng thông số $\mu_{train}$ và $\sigma_{train}$ từ `StandardScaler`.
 - **Ngưỡng dung sai nhiệt độ:** `tolerance_degC = 1.5` ($\pm 1.5^\circ\text{C}$).
 
 ### 2.2 Đầu ra kết quả đánh giá (Evaluation Outputs)
-- **Thư mục lưu trữ theo ngày thực nghiệm:** `evalution_results/evaluation_YYYYMMDD/` (ví dụ: `evalution_results/evaluation_20261121/`).
-- **Các tệp kết quả được xuất:**
-  1. `<model_name>_metrics.json`: Báo cáo chi tiết toàn bộ các chỉ số của từng mô hình dạng JSON.
-  2. `summary_evaluation.csv`: Bảng tổng hợp đối đầu so sánh cả 3 mô hình trên cùng các tiêu chí.
-  3. `<model_name>_sample_<idx>_forecast.png`: Biểu đồ đường so sánh giữa 72 giờ thực tế vs dự báo kèm dải dung sai $\pm 1.5^\circ\text{C}$.
-  4. `<model_name>_attention_heatmap.png`: Bản đồ nhiệt ma trận Attention Heatmap $72 \times 168$.
+- **Thư mục lưu trữ theo ngày thực nghiệm:** `evalution_results/evaluation_YYYYMMDD/` (ví dụ: `evalution_results/evaluation_20261126/`).
+- **Các tệp kết quả được xuất theo từng version (`<base_model>_v<N>`, tránh ghi đè giữa v1/v2/vN):**
+  1. `<model_name>_v<N>_metrics.json`: Báo cáo chi tiết toàn bộ các chỉ số của từng phiên bản dạng JSON.
+  2. `summary_evaluation.csv`: Bảng tổng hợp đối đầu so sánh các mô hình và các phiên bản trên cùng các tiêu chí.
+  3. `<model_name>_v<N>_sample_<idx>_forecast.png`: Biểu đồ đường so sánh giữa 72 giờ thực tế vs dự báo kèm dải dung sai $\pm 1.5^\circ\text{C}$.
+  4. `<model_name>_v<N>_attention_heatmap.png`: Bản đồ nhiệt ma trận Attention Heatmap $72 \times 168$.
 
 ### 2.3 Ghi nhận kết quả vào TensorBoard (`runs/`)
-- Nếu chạy `--mode all` sẽ ghi chung vào phiên vừa train; nếu chạy `--mode evaluate` riêng (không truyền `--run_name`) thì `main.py` tự gắn vào thư mục `runs/<model_name>_*` mới nhất của mô hình đó:
+- Nếu chạy `--mode all` sẽ ghi chung vào phiên vừa train; nếu chạy `--mode evaluate` riêng (không truyền `--run_name`) thì `main.py` tự gắn vào thư mục `runs/<model_name>_v<N>*` tương ứng của phiên bản đó:
   - `Loss/Test`: Sai số MSE trên toàn bộ tập Test sau khi hoàn tất đánh giá (ghi qua `logger.log_test_metrics()`).
   - `Accuracy/Test`: Tỷ lệ % số giờ dự đoán nằm trong khoảng lệch $\le \pm 1.5^\circ\text{C}$ trên tập Test.
   - `HParams`: Ghi siêu tham số huấn luyện kèm `hparam/MAE`, `hparam/RMSE`, `hparam/R2`, `hparam/Acc_1_5C` qua `logger.log_hparams(..., run_name=".")` để đối chiếu giữa các lần chạy trên giao diện TensorBoard.

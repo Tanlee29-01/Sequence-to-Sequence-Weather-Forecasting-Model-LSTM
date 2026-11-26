@@ -35,20 +35,24 @@
   - `tolerance_degC`: `1.5` ($\pm 1.5^\circ\text{C}$), quy đổi sang không gian chuẩn hóa qua `target_scale = dm.scaler.scale_[dm.target_idx]`.
   - `log_figure_every`: `5` epochs (ghi biểu đồ vào TensorBoard ở epoch `1` và các bội số của `5`).
 
-### 2.2 Vị trí và Quy chuẩn Đặt tên File Checkpoint (.pth)
-- **Thư mục lưu trữ:** Toàn bộ trọng số mô hình được lưu tại thư mục [`checkpoints/`](file:///d:/UTH/Deeplearning/course_work_topic_5/checkpoints/).
-- **Cấu trúc đặt tên chuẩn hóa:**
+### 2.2 Vị trí và Quy chuẩn Đặt tên File Checkpoint (.pth) theo Phiên bản (`v1 .. vN`)
+- **Thư mục lưu trữ phân tầng theo phiên bản:** Mỗi lần huấn luyện tự động tăng số phiên bản (`v1`, `v2`, `v3`, ..., `vN`) và lưu vào thư mục con riêng tại [`checkpoints/`](file:///d:/UTH/Deeplearning/course_work_topic_5/checkpoints/) để tuyệt đối không ghi đè các lần trước:
+  ```text
+  checkpoints/
+  ├── <model_name>_v1/   # _best.pth, _final.pth, _last.pth, _epoch_n.pth, config.json
+  ├── <model_name>_v2/
+  └── <model_name>_vN/
+  ```
+- **Cấu trúc đặt tên bên trong `checkpoints/<model_name>_v<N>/`:**
   - Checkpoint từng epoch: `<model_name>_epoch_<n>.pth`
   - File tốt nhất (Best Validation Loss — có timestamp): `<model_name>_<YYYYMMDD-HHMMSS>_best.pth`
   - File tốt nhất rút gọn (Best Alias): `<model_name>_best.pth`
-  - File kết thúc huấn luyện (Last Epoch — có timestamp): `<model_name>_<YYYYMMDD-HHMMSS>_last.pth`
-  - File kết thúc rút gọn (Last & Final Alias): `<model_name>_last.pth` và `<model_name>_final.pth`
+  - File kết thúc huấn luyện (Last Epoch — có timestamp & alias): `<model_name>_<YYYYMMDD-HHMMSS>_last.pth`, `<model_name>_last.pth`, và `<model_name>_final.pth`
+  - File cấu hình đi kèm: `config.json` (lưu `model_config`, `training`, `data` của phiên bản để đảm bảo tái tạo đúng kiến trúc khi evaluate).
 - **Ví dụ thực tế:**
-  - `checkpoints/seq2seq_lstm_epoch_1.pth`
-  - `checkpoints/seq2seq_lstm_20261125-080743_best.pth`
-  - `checkpoints/seq2seq_lstm_best.pth`
-  - `checkpoints/seq2seq_lstm_20261125-081201_last.pth`
-  - `checkpoints/seq2seq_lstm_final.pth`
+  - `checkpoints/seq2seq_attention_v1/seq2seq_attention_20261121-080327_best.pth`
+  - `checkpoints/seq2seq_attention_v2/seq2seq_attention_best.pth`
+  - `checkpoints/seq2seq_attention_v3/config.json`
 - **Cấu trúc bên trong file `.pth`:**
   ```python
   checkpoint_data = {
@@ -57,13 +61,14 @@
       "best_val_loss": self.best_val_loss,
       "epoch": epoch,
       "model_name": self.model_name,
+      "model_config": self.model_config,  # Tùy chọn nếu truyền từ main.py
   }
   ```
 
 ### 2.3 Nhật ký ghi nhận trực quan vào `runs/` (TensorBoard Logging)
-- **Thư mục lưu log tách biệt theo từng phiên chạy:**
-  - Mặc định khi train (`main.py --mode train|all`): `runs/<model_name>_<YYYYMMDD-HHMMSS>/` (hoặc `runs/<model_name>_<run_name>/` nếu truyền cờ `--run_name`, giúp các lần chạy không ghi đè lên nhau và so sánh trực tiếp được trên TensorBoard).
-  - Khi chạy `--mode evaluate` riêng (không truyền `--run_name`): tự động gắn vào thư mục `runs/<model_name>_*` mới nhất để bổ sung kết quả Test cùng biểu đồ train.
+- **Thư mục lưu log tách biệt theo phiên bản & từng lần chạy:**
+  - Mặc định khi train (`main.py --mode train|all`): tự động gắn đúng số phiên bản `vN` tương ứng với `checkpoints/`: `runs/<model_name>_v<N>_<YYYYMMDD-HHMMSS>/` (hoặc tùy biến hậu tố qua `--run_name`).
+  - Khi chạy `--mode evaluate` (ví dụ `--model seq2seq_attention_v1` hoặc `--model seq2seq_attention_v3`): tự động gắn vào thư mục `runs/<model_name>_v<N>*` tương ứng để bổ sung kết quả Test cùng biểu đồ train.
 - **Hệ thống Scalar tags chuẩn hóa theo namespace (không ghi trùng):**
   - `Loss/Train`: Mất mát MSE trên tập Train tại mỗi Epoch.
   - `Loss/Validation`: Mất mát MSE trên tập Validation tại mỗi Epoch.

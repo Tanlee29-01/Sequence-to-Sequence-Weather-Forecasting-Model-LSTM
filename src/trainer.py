@@ -30,6 +30,7 @@ class ModelTrainer:
         tolerance_degC: float = 1.5,
         target_scale: float = 1.0,
         scheduler: Optional[object] = None,
+        model_config: Optional[Dict] = None,
     ):
         """Khởi tạo Trainer với mô hình, thuật toán tối ưu và các tham số điều khiển huấn luyện.
         - Hàm này thực hiện: Lưu trữ các tham chiếu đối tượng mạng, cấu hình thư mục lưu checkpoint, khởi tạo các biến theo dõi Early Stopping và nhận LR Scheduler từ bên ngoài.
@@ -47,6 +48,7 @@ class ModelTrainer:
             + tolerance_degC: Ngưỡng sai số nhiệt độ để tính độ chính xác (mặc định 1.5°C).
             + target_scale: Độ lệch chuẩn của biến nhiệt độ trên tập Train để chuẩn hóa ngưỡng sai số.
             + scheduler: Đối tượng LR Scheduler PyTorch (ReduceLROnPlateau, CosineAnnealingLR...) hoặc None để bỏ qua.
+            + model_config: Từ điển siêu tham số kiến trúc mô hình để nhúng kèm vào checkpoint (tùy chọn).
         - Output:
             + Không trả về giá trị (khởi tạo thực thể ModelTrainer).
         """
@@ -62,6 +64,7 @@ class ModelTrainer:
         self.teacher_forcing_decay = teacher_forcing_decay
         self.tolerance_scaled = tolerance_degC / max(1e-6, target_scale)
         self.scheduler = scheduler
+        self.model_config = model_config
 
         os.makedirs(self.checkpoints_dir, exist_ok=True)
         self.best_val_loss = float("inf")
@@ -392,6 +395,8 @@ class ModelTrainer:
             "epoch": epoch,
             "model_name": self.model_name,
         }
+        if self.model_config is not None:
+            checkpoint_data["model_config"] = self.model_config
         torch.save(checkpoint_data, save_path)
 
         # Lưu đồng thời file alias không kèm timestamp cho best/last và final.

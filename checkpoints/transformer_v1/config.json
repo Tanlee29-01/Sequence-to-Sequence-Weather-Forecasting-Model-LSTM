@@ -1,0 +1,36 @@
+{
+  "model": "transformer",
+  "version": "v1",
+  "created_at": "2026-11-21",
+  "model_config": {
+    "input_dim": 14,
+    "d_model": 64,
+    "nhead": 4,
+    "num_encoder_layers": 2,
+    "num_decoder_layers": 2,
+    "dim_feedforward": 256,
+    "dropout": 0.1,
+    "output_dim": 1
+  },
+  "training": {
+    "learning_rate": 0.001,
+    "weight_decay": 1e-05,
+    "epochs": 50,
+    "early_stopping_patience": 7,
+    "clip_grad_norm": 1.0,
+    "teacher_forcing_ratio_start": 0.5,
+    "teacher_forcing_decay": 0.95,
+    "criterion": "MSELoss",
+    "scheduler_type": "none",
+    "lr_patience": 3,
+    "lr_factor": 0.5,
+    "lr_min": 1e-05,
+    "cosine_T_max": 50,
+    "log_figure_every": 5
+  },
+  "data": {
+    "seq_len": 168,
+    "pred_len": 72,
+    "num_features": 14
+  }
+}

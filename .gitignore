@@ -16,66 +16,12 @@ build/
 # =============================================================
 # Weights mô hình & Checkpoints  ← KHÔNG push lên git
 # =============================================================
-checkpoints/*.pth
-checkpoints/*.pt
-checkpoints/*.pkl
-checkpoints/*.ckpt
-
-# Giữ lại file .gitkeep để git track thư mục rỗng
-!checkpoints/.gitkeep
-
-# =============================================================
-# Dữ liệu gốc (file lớn, tải riêng)
-# =============================================================
-data/*.csv
-data/*.zip
-data/*.gz
-
-# Giữ lại file .gitkeep
-!data/.gitkeep
-
-# =============================================================
-# TensorBoard logs (runs/)
-# =============================================================
-runs/
-
-# =============================================================
-# Kết quả đánh giá & biểu đồ sinh ra
-# =============================================================
-evalution_results/
-
-# =============================================================
-# Jupyter Notebook checkpoints
-# =============================================================
-.ipynb_checkpoints/
-*/.ipynb_checkpoints/
-
-# =============================================================
-# IDE & Editor
-# =============================================================
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# =============================================================
-# Hệ điều hành
-# =============================================================
-.DS_Store
-Thumbs.db
-desktop.ini
-
-*.egg-info/
-dist/
-build/
-
-# =============================================================
-# Weights mô hình & Checkpoints  ← KHÔNG push lên git
-# =============================================================
-checkpoints/*.pth
-checkpoints/*.pt
-checkpoints/*.pkl
-checkpoints/*.ckpt
+checkpoints/**/*.pth
+checkpoints/**/*.pt
+checkpoints/**/*.pkl
+checkpoints/**/*.ckpt
+*.pth
+*.zip
 
 # Giữ lại file .gitkeep để git track thư mục rỗng
 !checkpoints/.gitkeep

@@ -1,8 +1,11 @@
 import argparse
+import copy
 from datetime import datetime
+import json
 import os
+import re
 import sys
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Tuple
 import torch
 import torch.nn as nn
 import yaml
@@ -13,6 +16,9 @@ from src.evaluation import ModelEvaluator
 from src.logger import TensorBoardLogger
 from src.model_builder import build_model
 from src.trainer import ModelTrainer
+
+
+VALID_MODELS: Tuple[str, ...] = ("seq2seq_lstm", "seq2seq_attention", "transformer")
 
 
 def load_config(config_path: str = "configs/config.yaml") -> Dict:
@@ -46,41 +52,278 @@ def get_device(device_str: str = "auto") -> torch.device:
         return torch.device("cpu")
 
 
-def resolve_experiment_name(
+def parse_model_arg(model_arg: str) -> Tuple[str, Optional[str]]:
+    """Tách tên mô hình gốc và hậu tố phiên bản (v1, v2, ..., v_n) từ tham số CLI --model.
+    - Hàm này thực hiện: Kiểm tra định dạng '<base_model>' hoặc '<base_model>_v<n>' bằng biểu thức chính quy.
+    - Input:
+        + model_arg: Chuỗi tên mô hình từ CLI (ví dụ: 'seq2seq_attention', 'seq2seq_attention_v1', 'transformer_v3').
+    - Output:
+        + base_model: Tên kiến trúc gốc trong VALID_MODELS.
+        + version: Nhãn phiên bản dạng 'v1', 'v2', ... hoặc None nếu không chỉ định.
+    """
+    cleaned = model_arg.strip().lower()
+    pattern = r"^(seq2seq_lstm|seq2seq_attention|transformer)(?:_(v\d+))?$"
+    match = re.match(pattern, cleaned)
+    if not match:
+        raise ValueError(
+            f"Tên mô hình '{model_arg}' không hợp lệ. Hỗ trợ: {', '.join(VALID_MODELS)} "
+            f"(có thể kèm hậu tố _v1, _v2, ..., _vN)."
+        )
+    return match.group(1), match.group(2)
+
+
+def list_model_versions(base_dir: str, base_model: str) -> List[int]:
+    """Liệt kê tất cả số hiệu phiên bản v1, v2, ..., vN đã tồn tại của một mô hình trong thư mục.
+    - Hàm này thực hiện: Quét các thư mục con có tiền tố '<base_model>_v<số>' và trích xuất danh sách số nguyên tăng dần.
+    - Input:
+        + base_dir: Thư mục gốc cần quét ('checkpoints' hoặc 'runs').
+        + base_model: Tên kiến trúc mô hình gốc.
+    - Output:
+        + Danh sách các số phiên bản nguyên đã sắp xếp tăng dần.
+    """
+    if not os.path.exists(base_dir):
+        return []
+    pattern = re.compile(rf"^{re.escape(base_model)}_v(\d+)(?:_.*)?$")
+    versions: List[int] = []
+    for entry in os.listdir(base_dir):
+        full_path = os.path.join(base_dir, entry)
+        if os.path.isdir(full_path):
+            m = pattern.match(entry)
+            if m:
+                versions.append(int(m.group(1)))
+    return sorted(set(versions))
+
+
+def get_next_version(checkpoints_root: str, runs_dir: str, base_model: str) -> str:
+    """Tự động xác định số hiệu phiên bản kế tiếp (v1 -> v2 -> v3 -> ... -> vN) khi huấn luyện mới.
+    - Hàm này thực hiện: Tổng hợp các version hiện có trong checkpoints/ và runs/ để trả về v(max + 1).
+    - Input:
+        + checkpoints_root: Thư mục gốc checkpoints/.
+        + runs_dir: Thư mục gốc runs/.
+        + base_model: Tên kiến trúc mô hình gốc.
+    - Output:
+        + Chuỗi phiên bản tiếp theo dạng 'v3', 'v4', ...
+    """
+    ckpt_versions = list_model_versions(checkpoints_root, base_model)
+    run_versions = list_model_versions(runs_dir, base_model)
+    all_versions = ckpt_versions + run_versions
+    next_num = max(all_versions, default=0) + 1
+    return f"v{next_num}"
+
+
+def resolve_version_for_mode(
+    checkpoints_root: str,
     runs_dir: str,
-    model_name: str,
+    base_model: str,
+    explicit_version: Optional[str],
     mode: str,
     run_name: Optional[str] = None,
 ) -> str:
-    """Tạo tên thư mục run tách biệt cho mỗi lần chạy trên TensorBoard.
-    - Hàm này thực hiện: Gắn nhãn run_name hoặc timestamp YYYYMMDD-HHMMSS để các lần huấn luyện không ghi đè lên nhau; riêng chế độ evaluate sẽ gắn vào run mới nhất của mô hình nếu không chỉ định run_name.
+    """Xác định phiên bản mục tiêu cho chế độ chạy hiện tại (train, evaluate hoặc all).
+    - Hàm này thực hiện: Ưu tiên version chỉ định tường minh; nếu train sẽ tự tăng vN tiếp theo; nếu evaluate sẽ chọn vN mới nhất hiện có.
+    - Input:
+        + checkpoints_root: Thư mục gốc checkpoints/.
+        + runs_dir: Thư mục gốc runs/.
+        + base_model: Tên mô hình gốc.
+        + explicit_version: Version trích xuất từ '--model <model>_vN' (nếu có).
+        + mode: Chế độ thực thi ('train', 'evaluate', 'all', ...).
+        + run_name: Tham số '--run_name' nếu người dùng truyền kèm (tùy chọn).
+    - Output:
+        + version: Chuỗi phiên bản chuẩn dạng 'v1', 'v2', 'v3', ...
+    """
+    if explicit_version:
+        return explicit_version
+
+    if run_name:
+        m = re.match(r"^(v\d+)(?:_.*)?$", run_name.strip().lower())
+        if m:
+            return m.group(1)
+
+    if mode in ["train", "all"]:
+        return get_next_version(checkpoints_root, runs_dir, base_model)
+
+    existing_ckpts = list_model_versions(checkpoints_root, base_model)
+    if existing_ckpts:
+        return f"v{max(existing_ckpts)}"
+
+    existing_runs = list_model_versions(runs_dir, base_model)
+    if existing_runs:
+        return f"v{max(existing_runs)}"
+
+    return "v1"
+
+
+def resolve_best_checkpoint(
+    checkpoints_root: str,
+    version_ckpt_dir: str,
+    base_model: str,
+    explicit_ckpt: Optional[str] = None,
+) -> str:
+    """Tìm đường dẫn file checkpoint tốt nhất cho phiên bản đang đánh giá.
+    - Hàm này thực hiện: Ưu tiên --checkpoint chỉ định; nếu không sẽ tìm <base_model>_best.pth hoặc *_best.pth mới nhất trong thư mục version.
+    - Input:
+        + checkpoints_root: Thư mục gốc checkpoints/.
+        + version_ckpt_dir: Thư mục riêng của phiên bản (ví dụ: checkpoints/seq2seq_attention_v1).
+        + base_model: Tên kiến trúc mô hình gốc.
+        + explicit_ckpt: Đường dẫn file .pth người dùng truyền trực tiếp (tùy chọn).
+    - Output:
+        + Đường dẫn tới file checkpoint cần nạp (hoặc chuỗi rỗng nếu chưa có).
+    """
+    if explicit_ckpt:
+        return explicit_ckpt
+
+    search_dirs = [version_ckpt_dir, checkpoints_root]
+    for search_dir in search_dirs:
+        if not os.path.exists(search_dir):
+            continue
+        alias_best = os.path.join(search_dir, f"{base_model}_best.pth")
+        if os.path.exists(alias_best):
+            return alias_best
+
+        best_candidates = sorted([
+            f for f in os.listdir(search_dir)
+            if os.path.isfile(os.path.join(search_dir, f))
+            and f.startswith(base_model)
+            and f.endswith("_best.pth")
+        ])
+        if best_candidates:
+            return os.path.join(search_dir, best_candidates[-1])
+
+        fallback_candidates = sorted([
+            f for f in os.listdir(search_dir)
+            if os.path.isfile(os.path.join(search_dir, f))
+            and f.startswith(base_model)
+            and (f.endswith("_final.pth") or f.endswith("_last.pth"))
+        ])
+        if fallback_candidates:
+            return os.path.join(search_dir, fallback_candidates[-1])
+
+    return ""
+
+
+def save_version_config(
+    version_ckpt_dir: str,
+    base_model: str,
+    version: str,
+    config: Dict,
+    epochs: int,
+) -> str:
+    """Lưu file config.json ghi lại siêu tham số mô hình và cấu hình huấn luyện của từng version.
+    - Hàm này thực hiện: Đóng gói thông số kiến trúc, training và data vào checkpoints/<model>_vN/config.json để phục vụ đánh giá lại chính xác.
+    - Input:
+        + version_ckpt_dir: Thư mục checkpoint của phiên bản.
+        + base_model: Tên kiến trúc mô hình gốc.
+        + version: Nhãn phiên bản ('v1', 'v2', ...).
+        + config: Từ điển cấu hình gốc.
+        + epochs: Số epochs huấn luyện thực tế.
+    - Output:
+        + config_json_path: Đường dẫn file config.json vừa ghi.
+    """
+    os.makedirs(version_ckpt_dir, exist_ok=True)
+    train_cfg = dict(config.get("training", {}))
+    train_cfg["epochs"] = epochs
+    data_cfg = config.get("data", {})
+
+    payload = {
+        "model": base_model,
+        "version": version,
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "model_config": config.get("models", {}).get(base_model, {}),
+        "training": train_cfg,
+        "data": {
+            "seq_len": data_cfg.get("seq_len", 168),
+            "pred_len": data_cfg.get("pred_len", 72),
+            "num_features": data_cfg.get("num_features", 14),
+        },
+    }
+    config_json_path = os.path.join(version_ckpt_dir, "config.json")
+    with open(config_json_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+    return config_json_path
+
+
+def apply_version_model_config(
+    config: Dict,
+    version_ckpt_dir: str,
+    base_model: str,
+    ckpt_path: str = "",
+) -> Dict:
+    """Nạp lại siêu tham số kiến trúc từ config.json hoặc file .pth của version cũ để tránh lệch shape mạng.
+    - Hàm này thực hiện: Đọc model_config đã lưu của version cần đánh giá và ghi đè vào bản sao từ điển cấu hình trước khi build_model().
+    - Input:
+        + config: Từ điển cấu hình hiện hành từ config.yaml.
+        + version_ckpt_dir: Thư mục checkpoint của phiên bản.
+        + base_model: Tên kiến trúc mô hình gốc.
+        + ckpt_path: Đường dẫn file .pth dự phòng nếu chưa có config.json.
+    - Output:
+        + effective_config: Bản sao từ điển cấu hình đã đồng bộ đúng kiến trúc của version.
+    """
+    effective_config = copy.deepcopy(config)
+    effective_config.setdefault("models", {})
+
+    config_json_path = os.path.join(version_ckpt_dir, "config.json")
+    if os.path.exists(config_json_path):
+        try:
+            with open(config_json_path, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            if isinstance(saved.get("model_config"), dict) and saved["model_config"]:
+                effective_config["models"][base_model] = saved["model_config"]
+                return effective_config
+        except Exception:
+            pass
+
+    if ckpt_path and os.path.exists(ckpt_path):
+        try:
+            ckpt_meta = torch.load(ckpt_path, map_location="cpu")
+            if isinstance(ckpt_meta, dict) and isinstance(ckpt_meta.get("model_config"), dict):
+                effective_config["models"][base_model] = ckpt_meta["model_config"]
+        except Exception:
+            pass
+
+    return effective_config
+
+
+def resolve_experiment_name(
+    runs_dir: str,
+    base_model: str,
+    version: str,
+    mode: str,
+    run_name: Optional[str] = None,
+) -> str:
+    """Tạo tên thư mục run tách biệt theo phiên bản cho mỗi lần chạy trên TensorBoard.
+    - Hàm này thực hiện: Gắn '<base_model>_<version>_<timestamp>' khi train mới; khi evaluate sẽ gắn vào thư mục '<base_model>_<version>*' tương ứng.
     - Input:
         + runs_dir: Thư mục gốc chứa log TensorBoard (mặc định 'runs').
-        + model_name: Tên kiến trúc mô hình.
+        + base_model: Tên kiến trúc mô hình gốc.
+        + version: Nhãn phiên bản ('v1', 'v2', 'v3', ...).
         + mode: Chế độ chạy ('train', 'evaluate', 'all', ...).
         + run_name: Tên phiên thực nghiệm do người dùng truyền qua CLI (tùy chọn).
     - Output:
         + experiment_name: Tên thư mục con duy nhất trong runs/.
     """
+    prefix = f"{base_model}_{version}"
     if run_name:
-        return f"{model_name}_{run_name}"
+        cleaned_run = run_name.strip()
+        if cleaned_run.lower().startswith(f"{version}_") or cleaned_run.lower() == version:
+            return f"{base_model}_{cleaned_run}"
+        return f"{prefix}_{cleaned_run}"
 
     if mode == "evaluate" and os.path.exists(runs_dir):
         candidates = [
             d for d in os.listdir(runs_dir)
-            if os.path.isdir(os.path.join(runs_dir, d)) and d.startswith(f"{model_name}_")
+            if os.path.isdir(os.path.join(runs_dir, d)) and d.startswith(prefix)
         ]
         if candidates:
             candidates.sort(key=lambda d: os.path.getmtime(os.path.join(runs_dir, d)))
             return candidates[-1]
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    return f"{model_name}_{timestamp}"
+    return f"{prefix}_{timestamp}"
 
 
 def run_pipeline(args) -> None:
     """Điều phối toàn bộ Pipeline thực thi bài toán Sequence-to-Sequence Weather Forecasting.
-    - Hàm này thực hiện: Khởi tạo DataModule theo 4 pha chống rò rỉ, chạy EDA trên tập Train, xây dựng mô hình, huấn luyện và đánh giá trên tập Test.
+    - Hàm này thực hiện: Khởi tạo DataModule theo 4 pha chống rò rỉ, chạy EDA trên tập Train, quản lý version tự động (v1..vN), huấn luyện và đánh giá trên tập Test.
     - Input:
         + args: Đối tượng Namespace chứa các tham số dòng lệnh người dùng truyền vào.
     - Output:
@@ -119,7 +362,6 @@ def run_pipeline(args) -> None:
                 return
         else:
             dm.setup()
-            # Kiểm chứng không rò rỉ
             dm.verify_zero_leakage()
             print("[ANTI-LEAKAGE] Đã kiểm chứng Zero Leakage: Chỉ thực hiện EDA trên tập Train!")
             eda_files = run_eda_pipeline(
@@ -143,11 +385,44 @@ def run_pipeline(args) -> None:
             num_workers=data_cfg.get("num_workers", 0),
         )
 
-        model_name = args.model.lower()
-        print(f"\n==================== [KHỞI TẠO MÔ HÌNH: {model_name}] ====================")
-        model = build_model(model_name, config).to(device)
+        base_model, explicit_version = parse_model_arg(args.model)
+        paths_cfg = config.get("paths", {})
+        checkpoints_root = paths_cfg.get("checkpoints_dir", "checkpoints")
+        runs_dir = paths_cfg.get("runs_dir", "runs")
 
-        train_cfg = config.get("training", {})
+        version = resolve_version_for_mode(
+            checkpoints_root=checkpoints_root,
+            runs_dir=runs_dir,
+            base_model=base_model,
+            explicit_version=explicit_version,
+            mode=mode,
+            run_name=getattr(args, "run_name", None),
+        )
+        versioned_name = f"{base_model}_{version}"
+        version_ckpt_dir = os.path.join(checkpoints_root, versioned_name)
+
+        explicit_ckpt = getattr(args, "checkpoint", None)
+        best_ckpt = ""
+        effective_config = config
+        if mode == "evaluate":
+            best_ckpt = resolve_best_checkpoint(
+                checkpoints_root=checkpoints_root,
+                version_ckpt_dir=version_ckpt_dir,
+                base_model=base_model,
+                explicit_ckpt=explicit_ckpt,
+            )
+            effective_config = apply_version_model_config(
+                config=config,
+                version_ckpt_dir=version_ckpt_dir,
+                base_model=base_model,
+                ckpt_path=best_ckpt,
+            )
+
+        print(f"\n==================== [KHỞI TẠO MÔ HÌNH: {versioned_name} (Kiến trúc: {base_model})] ====================")
+        print(f"[VERSION] Thư mục Checkpoint: {version_ckpt_dir}")
+        model = build_model(base_model, effective_config).to(device)
+
+        train_cfg = effective_config.get("training", {})
         optimizer = torch.optim.Adam(
             model.parameters(),
             lr=train_cfg.get("learning_rate", 0.001),
@@ -178,25 +453,19 @@ def run_pipeline(args) -> None:
         else:
             print("[SCHEDULER] Không dùng LR Scheduler (scheduler_type='none').")
 
-        # --- Lấy target_scale từ DataModule để tính ngưỡng accuracy đúng ---
-        # target_scale = độ lệch chuẩn σ của T(degC) trên tập Train (vd: ~8°C)
-        # Nếu không truyền vào Trainer, tolerance_scaled = 1.5 / 1.0 = 1.5 (sai lớn)
-        # Với σ≈8: tolerance_scaled = 1.5 / 8 = 0.1875 (đúng trong không gian chuẩn hoá)
         target_scale = float(dm.scaler.scale_[dm.target_idx]) if hasattr(dm, "scaler") and dm.scaler is not None else 1.0
-        eval_cfg = config.get("evaluation", {})
+        eval_cfg = effective_config.get("evaluation", {})
         tolerance_degC = eval_cfg.get("tolerance_degC", 1.5)
         print(f"[TRAINER] target_scale (σ của T°C trên Train) = {target_scale:.4f} | tolerance_scaled = {tolerance_degC / target_scale:.4f}")
 
-        paths_cfg = config.get("paths", {})
-        checkpoints_dir = paths_cfg.get("checkpoints_dir", "checkpoints")
-
+        model_arch_cfg = effective_config.get("models", {}).get(base_model, {})
         trainer = ModelTrainer(
             model=model,
             optimizer=optimizer,
             criterion=criterion,
             device=device,
-            checkpoints_dir=checkpoints_dir,
-            model_name=model_name,
+            checkpoints_dir=version_ckpt_dir,
+            model_name=base_model,
             clip_grad_norm=train_cfg.get("clip_grad_norm", 1.0),
             early_stopping_patience=train_cfg.get("early_stopping_patience", 7),
             teacher_forcing_start=train_cfg.get("teacher_forcing_ratio_start", 0.5),
@@ -204,12 +473,13 @@ def run_pipeline(args) -> None:
             scheduler=scheduler,
             target_scale=target_scale,
             tolerance_degC=tolerance_degC,
+            model_config=model_arch_cfg,
         )
 
-        runs_dir = paths_cfg.get("runs_dir", "runs")
         experiment_name = resolve_experiment_name(
             runs_dir=runs_dir,
-            model_name=model_name,
+            base_model=base_model,
+            version=version,
             mode=mode,
             run_name=getattr(args, "run_name", None),
         )
@@ -222,53 +492,62 @@ def run_pipeline(args) -> None:
 
         epochs = args.epochs if args.epochs is not None else train_cfg.get("epochs", 50)
         if mode in ["train", "all"]:
+            saved_cfg_path = save_version_config(
+                version_ckpt_dir=version_ckpt_dir,
+                base_model=base_model,
+                version=version,
+                config=effective_config,
+                epochs=epochs,
+            )
+            print(f"[CONFIG] Đã lưu cấu hình phiên bản tại: {saved_cfg_path}")
+
             config_summary = (
-                f"**Model:** `{model_name}` | **LR:** `{train_cfg.get('learning_rate', 0.001)}` | "
+                f"**Model:** `{versioned_name}` | **LR:** `{train_cfg.get('learning_rate', 0.001)}` | "
                 f"**Scheduler:** `{train_cfg.get('scheduler_type', 'ReduceLROnPlateau')}` | "
                 f"**Epochs:** `{epochs}` | **TF start/decay:** `{train_cfg.get('teacher_forcing_ratio_start', 0.5)}/{train_cfg.get('teacher_forcing_decay', 0.95)}` | "
                 f"**target_scale:** `{target_scale:.4f}`"
             )
             logger.log_text("Experiment/Config", config_summary, step=0)
 
-        # Chạy Huấn luyện
-        if mode in ["train", "all"]:
             log_figure_every = train_cfg.get("log_figure_every", 5)
             trainer.fit(train_loader, val_loader, epochs=epochs, logger=logger, log_figure_every=log_figure_every)
 
         # Chạy Đánh giá trên tập Test
         if mode in ["evaluate", "all"]:
-            print(f"\n==================== [ĐÁNH GIÁ MÔ HÌNH TRÊN TẬP TEST] ====================")
-            # Tìm file checkpoint tốt nhất có timestamp hoặc alias mặc định
-            best_ckpt = ""
-            if os.path.exists(checkpoints_dir):
-                candidates = sorted([
-                    f for f in os.listdir(checkpoints_dir)
-                    if f.startswith(model_name) and f.endswith("_best.pth")
-                ])
-                if candidates:
-                    best_ckpt = os.path.join(checkpoints_dir, candidates[-1])
+            print(f"\n==================== [ĐÁNH GIÁ MÔ HÌNH TRÊN TẬP TEST: {versioned_name}] ====================")
+            if not best_ckpt:
+                best_ckpt = resolve_best_checkpoint(
+                    checkpoints_root=checkpoints_root,
+                    version_ckpt_dir=version_ckpt_dir,
+                    base_model=base_model,
+                    explicit_ckpt=explicit_ckpt,
+                )
 
             if best_ckpt and os.path.exists(best_ckpt):
                 print(f"[CHECKPOINT] Nạp trọng số tốt nhất từ: {best_ckpt}")
                 trainer.load_checkpoint(best_ckpt)
+            else:
+                print(f"[CẢNH BÁO] Không tìm thấy file checkpoint trong '{version_ckpt_dir}'. Đang đánh giá với trọng số hiện tại.")
 
             evaluator = ModelEvaluator(
                 model=model,
                 device=device,
-                tolerance_degC=config.get("evaluation", {}).get("tolerance_degC", 1.5),
+                tolerance_degC=effective_config.get("evaluation", {}).get("tolerance_degC", 1.5),
                 results_dir=paths_cfg.get("evaluation_dir", "evalution_results"),
             )
 
             results = evaluator.evaluate(
                 test_loader=test_loader,
                 inverse_transform_fn=dm.inverse_transform_target,
-                model_name=model_name,
+                model_name=versioned_name,
                 logger=logger,
             )
 
             logger.log_hparams(
                 hparam_dict={
-                    "model": model_name,
+                    "model": versioned_name,
+                    "base_model": base_model,
+                    "version": version,
                     "lr": float(train_cfg.get("learning_rate", 0.001)),
                     "scheduler": str(train_cfg.get("scheduler_type", "ReduceLROnPlateau")),
                     "batch_size": int(data_cfg.get("batch_size", 64)),
@@ -318,8 +597,7 @@ def main() -> None:
         "--model",
         type=str,
         default="seq2seq_attention",
-        choices=["seq2seq_lstm", "seq2seq_attention", "transformer"],
-        help="Tên mô hình: 'seq2seq_lstm', 'seq2seq_attention', 'transformer'",
+        help="Tên mô hình ('seq2seq_lstm', 'seq2seq_attention', 'transformer'), có thể kèm hậu tố _v1, _v2, ..., _vN",
     )
     parser.add_argument(
         "--epochs",
@@ -338,7 +616,13 @@ def main() -> None:
         "--run_name",
         type=str,
         default=None,
-        help="Nhãn định danh cho lần chạy TensorBoard (ví dụ: 'v3_cosine_lr'). Mặc định tự gắn timestamp.",
+        help="Nhãn định danh bổ sung cho lần chạy TensorBoard (mặc định gắn theo version vN và timestamp).",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="Đường dẫn file checkpoint .pth cụ thể (tùy chọn, dùng khi muốn nạp file lẻ thay vì best.pth).",
     )
 
     args = parser.parse_args()

@@ -52,7 +52,7 @@ course_work_topic_5/
 │
 ├── runs/                           # Nhật ký sự kiện trực quan của TensorBoard
 │
-├── checkpoints/                    # File trọng số mô hình tốt nhất (.pth)
+├── checkpoints/                    # Lưu trọng số tách theo từng version (<model>_v1/, <model>_v2/, ..., <model>_vN/ + config.json)
 │
 ├── notebooks/                      # Jupyter Notebooks phục vụ thử nghiệm và trực quan hóa
 │   ├── experiment_demo.ipynb       # Thử nghiệm so sánh mô hình, đo độ trễ và trực quan hóa Attention
@@ -130,9 +130,17 @@ python main.py --mode train --model transformer --epochs 30
 
 ### 5.3 Đánh Giá Mô Hình Trên Tập Test (Evaluation)
 ```bash
+# Đánh giá phiên bản mới nhất hiện có (vd: v2 -> v3 -> ... -> vN)
 python main.py --mode evaluate --model seq2seq_attention
+
+# Hoặc chỉ định rõ từng phiên bản để so sánh v1, v2, v3...
+python main.py --mode evaluate --model seq2seq_attention_v1
+python main.py --mode evaluate --model seq2seq_attention_v2
+
+# Hoặc chỉ định trực tiếp 1 file checkpoint cụ thể
+python main.py --mode evaluate --model seq2seq_attention_v1 --checkpoint checkpoints/seq2seq_attention_v1/seq2seq_attention_epoch_10.pth
 ```
-Kết quả báo cáo chỉ số (MAE, MSE, RMSE, R2, Tỷ lệ sai số $\le \pm 1.5^\circ\text{C}$), biểu đồ so sánh chuỗi 72h và Attention Heatmap được lưu tại thư mục `evalution_results/evaluation_YYYYMMDD/`.
+Kết quả báo cáo chỉ số (MAE, MSE, RMSE, R2, Tỷ lệ sai số $\le \pm 1.5^\circ\text{C}$), biểu đồ so sánh chuỗi 72h và Attention Heatmap được lưu tại thư mục `evalution_results/evaluation_YYYYMMDD/` theo từng tên phiên bản (`<model>_v<N>`).
 
 ### 5.4 Chạy Toàn Bộ Đường Ống (End-to-End Pipeline)
 ```bash
