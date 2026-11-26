@@ -81,6 +81,7 @@ class TestTrainer(unittest.TestCase):
 
     def test_fit_and_checkpoint_saving(self):
         """Kiểm tra toàn bộ quá trình fit() lưu đúng file checkpoint tốt nhất."""
+        self.trainer.experiment_name = "unit_test_run"
         history = self.trainer.fit(self.train_loader, self.val_loader, epochs=2)
 
         self.assertEqual(len(history["train_loss"]), 2)
@@ -108,7 +109,8 @@ class TestTrainer(unittest.TestCase):
         # Kiểm tra khả năng load lại checkpoint
         fresh_model = ModelBuilder_Seq2SeqLSTM(input_dim=14, hidden_dim=16, num_layers=1)
         self.trainer.model = fresh_model
-        self.trainer.load_checkpoint(best_path)
+        checkpoint_data = self.trainer.load_checkpoint(best_path)
+        self.assertEqual(checkpoint_data["experiment_name"], "unit_test_run")
 
     def test_resource_monitoring(self):
         """Kiểm tra hàm đo tài nguyên RAM và GPU VRAM."""
@@ -119,6 +121,20 @@ class TestTrainer(unittest.TestCase):
         vram_mb = self.trainer.get_vram_usage_mb()
         self.assertIsInstance(vram_mb, float)
         self.assertGreaterEqual(vram_mb, 0.0)
+
+    def test_load_checkpoint_rejects_different_model(self):
+        """Không cho phép nạp checkpoint thuộc kiến trúc/model khác."""
+        wrong_model_path = os.path.join(self.test_ckpt_dir, "wrong_model.pth")
+        torch.save(
+            {
+                "model_name": "another_model",
+                "model_state_dict": self.model.state_dict(),
+            },
+            wrong_model_path,
+        )
+
+        with self.assertRaisesRegex(ValueError, "thuộc model"):
+            self.trainer.load_checkpoint(wrong_model_path)
 
 
 def run_smoke_test():

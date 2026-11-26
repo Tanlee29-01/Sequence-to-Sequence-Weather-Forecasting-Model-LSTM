@@ -139,6 +139,8 @@ class ModelEvaluator:
         inverse_transform_fn,
         model_name: str = "model",
         logger: Optional[object] = None,
+        checkpoint_path: Optional[str] = None,
+        checkpoint_run: Optional[str] = None,
     ) -> Dict[str, Union[float, str]]:
         """Thực hiện quy trình đánh giá toàn diện trên toàn bộ tập dữ liệu kiểm thử Test.
         - Hàm này thực hiện: Thu thập toàn bộ dự đoán, giải chuẩn hóa về độ C, tính toán các chỉ số độ chính xác (loss_test, accuracy_test), đo tốc độ suy luận và lưu báo cáo.
@@ -190,6 +192,10 @@ class ModelEvaluator:
             **metrics,
             **perf,
         }
+        if checkpoint_path:
+            full_results["Checkpoint"] = checkpoint_path
+        if checkpoint_run:
+            full_results["Training_Run"] = checkpoint_run
 
         # Lưu kết quả dạng JSON & CSV
         self.save_results(full_results, model_name)

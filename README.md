@@ -130,9 +130,11 @@ python main.py --mode train --model transformer --epochs 30
 
 ### 5.3 Đánh Giá Mô Hình Trên Tập Test (Evaluation)
 ```bash
-python main.py --mode evaluate --model seq2seq_attention
+# Truyền chính xác checkpoint tốt nhất của run muốn đánh giá
+python main.py --mode evaluate --model seq2seq_attention --checkpoint checkpoints/seq2seq_attention_best.pth
 ```
 Kết quả báo cáo chỉ số (MAE, MSE, RMSE, R2, Tỷ lệ sai số $\le \pm 1.5^\circ\text{C}$), biểu đồ so sánh chuỗi 72h và Attention Heatmap được lưu tại thư mục `evalution_results/evaluation_YYYYMMDD/`.
+Khi có nhiều checkpoint của cùng một mô hình, cần chỉ định file bằng `--checkpoint`; báo cáo JSON sẽ lưu đường dẫn checkpoint và tên run huấn luyện nếu checkpoint có metadata run.
 
 ### 5.4 Chạy Toàn Bộ Đường Ống (End-to-End Pipeline)
 ```bash

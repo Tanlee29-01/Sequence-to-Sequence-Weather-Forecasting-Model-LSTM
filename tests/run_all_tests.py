@@ -8,6 +8,10 @@ import sys
 import time
 import unittest
 
+for stream in (sys.stdout, sys.stderr):
+    if hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
@@ -15,12 +19,20 @@ if ROOT_DIR not in sys.path:
 
 def run_all_smoke_tests() -> int:
     """Chạy tuần tự toàn bộ các bài kiểm thử khói (Smoke Tests) cho các module trong src/."""
-    from tests.test_data_module import run_smoke_test as test_dm
-    from tests.test_model_builder import run_smoke_test as test_mb
-    from tests.test_trainer import run_smoke_test as test_tr
-    from tests.test_evaluation import run_smoke_test as test_ev
-    from tests.test_logger import run_smoke_test as test_lg
-    from tests.test_eda import run_smoke_test as test_ed
+    try:
+        from tests.test_data_module import run_smoke_test as test_dm
+        from tests.test_model_builder import run_smoke_test as test_mb
+        from tests.test_trainer import run_smoke_test as test_tr
+        from tests.test_evaluation import run_smoke_test as test_ev
+        from tests.test_logger import run_smoke_test as test_lg
+        from tests.test_eda import run_smoke_test as test_ed
+    except ImportError as exc:
+        print(f"[ERROR] Không thể nạp test do thiếu dependency: {exc}")
+        print(
+            "[HƯỚNG DẪN] Kích hoạt đúng môi trường ảo rồi chạy: "
+            "python -m pip install -r requirements.txt"
+        )
+        return 1
 
     tests = [
         ("DataModule (Anti-Leakage & Sliding Windows)", test_dm),

@@ -59,8 +59,8 @@ class TestDataModule(unittest.TestCase):
             "Lỗi: Cột 'max. wv (m/s)' vẫn còn giá trị lỗi -9999.0 sau tiền xử lý."
         )
         self.assertFalse(
-            self.dm.train_df.isna().any().any(),
-            "Lỗi: Tập train vẫn còn giá trị NaN sau khi ffill/bfill."
+            torch.isnan(self.dm.train_dataset.data).any().item(),
+            "Lỗi: Dataset train vẫn còn giá trị NaN sau khi ffill/bfill."
         )
 
     def test_zero_leakage_temporal_split(self):

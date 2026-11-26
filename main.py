@@ -7,6 +7,10 @@ import torch
 import torch.nn as nn
 import yaml
 
+for stream in (sys.stdout, sys.stderr):
+    if hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8", errors="replace")
+
 from src.data_module import JenaDataModule
 from src.eda import run_eda_pipeline
 from src.evaluation import ModelEvaluator
@@ -78,6 +82,43 @@ def resolve_experiment_name(
     return f"{model_name}_{timestamp}"
 
 
+def resolve_checkpoint_path(
+    model_name: str,
+    checkpoints_dir: str,
+    explicit_path: Optional[str] = None,
+    trained_checkpoint: Optional[str] = None,
+) -> str:
+    """Resolve a checkpoint without silently selecting ambiguous or random weights."""
+    if trained_checkpoint is not None:
+        checkpoint_path = trained_checkpoint
+    elif explicit_path:
+        checkpoint_path = explicit_path
+    else:
+        candidates = [
+            os.path.join(checkpoints_dir, filename)
+            for filename in os.listdir(checkpoints_dir)
+            if filename.startswith(f"{model_name}_")
+            and filename.endswith("_best.pth")
+        ] if os.path.isdir(checkpoints_dir) else []
+
+        if not candidates:
+            raise FileNotFoundError(
+                f"Không tìm thấy checkpoint tốt nhất cho '{model_name}' trong "
+                f"'{checkpoints_dir}'. Hãy truyền --checkpoint <đường_dẫn_checkpoint>."
+            )
+        if len(candidates) > 1:
+            candidate_list = "\n  - ".join(sorted(candidates))
+            raise ValueError(
+                f"Có nhiều checkpoint cho '{model_name}', không thể xác định run "
+                f"đúng một cách an toàn. Hãy truyền --checkpoint:\n  - {candidate_list}"
+            )
+        checkpoint_path = candidates[0]
+
+    if not os.path.isfile(checkpoint_path):
+        raise FileNotFoundError(f"Không tìm thấy checkpoint tại '{checkpoint_path}'.")
+    return checkpoint_path
+
+
 def run_pipeline(args) -> None:
     """Điều phối toàn bộ Pipeline thực thi bài toán Sequence-to-Sequence Weather Forecasting.
     - Hàm này thực hiện: Khởi tạo DataModule theo 4 pha chống rò rỉ, chạy EDA trên tập Train, xây dựng mô hình, huấn luyện và đánh giá trên tập Test.
@@ -105,6 +146,8 @@ def run_pipeline(args) -> None:
 
     # 2. Xử lý theo từng chế độ chạy
     mode = args.mode.lower()
+    if getattr(args, "checkpoint", None) and mode != "evaluate":
+        raise ValueError("--checkpoint chỉ dùng khi chạy --mode evaluate.")
 
     if mode == "test":
         from tests.run_all_tests import run_all_smoke_tests
@@ -213,6 +256,7 @@ def run_pipeline(args) -> None:
             mode=mode,
             run_name=getattr(args, "run_name", None),
         )
+        trainer.experiment_name = experiment_name
         print(f"[TENSORBOARD] Ghi log thực nghiệm tại: {os.path.join(runs_dir, experiment_name)}")
 
         logger = TensorBoardLogger(
@@ -238,19 +282,16 @@ def run_pipeline(args) -> None:
         # Chạy Đánh giá trên tập Test
         if mode in ["evaluate", "all"]:
             print(f"\n==================== [ĐÁNH GIÁ MÔ HÌNH TRÊN TẬP TEST] ====================")
-            # Tìm file checkpoint tốt nhất có timestamp hoặc alias mặc định
-            best_ckpt = ""
-            if os.path.exists(checkpoints_dir):
-                candidates = sorted([
-                    f for f in os.listdir(checkpoints_dir)
-                    if f.startswith(model_name) and f.endswith("_best.pth")
-                ])
-                if candidates:
-                    best_ckpt = os.path.join(checkpoints_dir, candidates[-1])
-
-            if best_ckpt and os.path.exists(best_ckpt):
-                print(f"[CHECKPOINT] Nạp trọng số tốt nhất từ: {best_ckpt}")
-                trainer.load_checkpoint(best_ckpt)
+            best_ckpt = resolve_checkpoint_path(
+                model_name=model_name,
+                checkpoints_dir=checkpoints_dir,
+                explicit_path=getattr(args, "checkpoint", None),
+                trained_checkpoint=(
+                    trainer.latest_best_checkpoint if mode == "all" else None
+                ),
+            )
+            print(f"[CHECKPOINT] Nạp trọng số từ: {best_ckpt}")
+            checkpoint_data = trainer.load_checkpoint(best_ckpt)
 
             evaluator = ModelEvaluator(
                 model=model,
@@ -264,6 +305,8 @@ def run_pipeline(args) -> None:
                 inverse_transform_fn=dm.inverse_transform_target,
                 model_name=model_name,
                 logger=logger,
+                checkpoint_path=best_ckpt,
+                checkpoint_run=checkpoint_data.get("experiment_name"),
             )
 
             logger.log_hparams(
@@ -339,6 +382,12 @@ def main() -> None:
         type=str,
         default=None,
         help="Nhãn định danh cho lần chạy TensorBoard (ví dụ: 'v3_cosine_lr'). Mặc định tự gắn timestamp.",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="Đường dẫn checkpoint chính xác cần đánh giá (bắt buộc nếu có nhiều checkpoint cùng model).",
     )
 
     args = parser.parse_args()

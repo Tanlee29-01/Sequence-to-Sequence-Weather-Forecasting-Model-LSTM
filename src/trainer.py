@@ -67,6 +67,7 @@ class ModelTrainer:
         self.best_val_loss = float("inf")
         self.patience_counter = 0
         self.latest_best_checkpoint = ""
+        self.experiment_name: Optional[str] = None
 
     def _measure_resources(self) -> Tuple[float, float]:
         """Đo lường lượng tài nguyên RAM hệ thống và VRAM GPU đang được sử dụng.
@@ -391,6 +392,7 @@ class ModelTrainer:
             "best_val_loss": self.best_val_loss,
             "epoch": epoch,
             "model_name": self.model_name,
+            "experiment_name": self.experiment_name,
         }
         torch.save(checkpoint_data, save_path)
 
@@ -407,22 +409,33 @@ class ModelTrainer:
 
         return save_path
 
-    def load_checkpoint(self, checkpoint_path: str) -> None:
+    def load_checkpoint(self, checkpoint_path: str) -> Dict:
         """Nạp trọng số mô hình đã lưu từ file checkpoint .pth.
         - Hàm này thực hiện: Đọc file .pth và cập nhật state_dict vào mô hình mạng.
         - Input:
             + checkpoint_path: Đường dẫn tới file trọng số .pth cần nạp.
         - Output:
-            + Không trả về giá trị (cập nhật trực tiếp vào thuộc tính self.model).
+            + checkpoint_data: Metadata và trạng thái đã nạp.
         """
         if not os.path.exists(checkpoint_path):
             raise FileNotFoundError(
                 f"Không tìm thấy file checkpoint tại {checkpoint_path}."
             )
         checkpoint_data = torch.load(checkpoint_path, map_location=self.device)
+        checkpoint_model_name = checkpoint_data.get("model_name")
+        if checkpoint_model_name and checkpoint_model_name != self.model_name:
+            raise ValueError(
+                f"Checkpoint thuộc model '{checkpoint_model_name}', nhưng model đang "
+                f"khởi tạo là '{self.model_name}'."
+            )
+        if "model_state_dict" not in checkpoint_data:
+            raise ValueError(
+                f"Checkpoint '{checkpoint_path}' không có khóa 'model_state_dict'."
+            )
         self.model.load_state_dict(checkpoint_data["model_state_dict"])
         if "best_val_loss" in checkpoint_data:
             self.best_val_loss = checkpoint_data["best_val_loss"]
+        return checkpoint_data
 
 
 if __name__ == "__main__":

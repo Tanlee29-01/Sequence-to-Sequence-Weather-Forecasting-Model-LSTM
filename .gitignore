@@ -42,7 +42,8 @@ runs/
 # =============================================================
 # Kết quả đánh giá & biểu đồ sinh ra
 # =============================================================
-evalution_results/
+evalution_results/*
+!evalution_results/.gitkeep
 
 # =============================================================
 # Jupyter Notebook checkpoints
@@ -98,7 +99,8 @@ runs/
 # =============================================================
 # Kết quả đánh giá & biểu đồ sinh ra
 # =============================================================
-evalution_results/
+evalution_results/*
+!evalution_results/.gitkeep
 
 # =============================================================
 # Jupyter Notebook checkpoints
