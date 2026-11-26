@@ -52,7 +52,7 @@ course_work_topic_5/
 │
 ├── runs/                           # Nhật ký sự kiện trực quan của TensorBoard
 │
-├── checkpoints/                    # File trọng số mô hình tốt nhất (.pth)
+├── checkpoints/                    # Lưu trọng số tách theo từng version (<model>_v1/, <model>_v2/, ..., <model>_vN/ + config.json)
 │
 ├── notebooks/                      # Jupyter Notebooks phục vụ thử nghiệm và trực quan hóa
 │   ├── experiment_demo.ipynb       # Thử nghiệm so sánh mô hình, đo độ trễ và trực quan hóa Attention
@@ -130,11 +130,18 @@ python main.py --mode train --model transformer --epochs 30
 
 ### 5.3 Đánh Giá Mô Hình Trên Tập Test (Evaluation)
 ```bash
-# Truyền chính xác checkpoint tốt nhất của run muốn đánh giá
-python main.py --mode evaluate --model seq2seq_attention --checkpoint checkpoints/seq2seq_attention_best.pth
+# Đánh giá phiên bản mới nhất hiện có (vd: v2 -> v3 -> ... -> vN)
+python main.py --mode evaluate --model seq2seq_attention
+
+# Hoặc chỉ định rõ từng phiên bản để so sánh v1, v2, v3...
+python main.py --mode evaluate --model seq2seq_attention_v1
+python main.py --mode evaluate --model seq2seq_attention_v2
+
+# Hoặc chỉ định trực tiếp 1 file checkpoint cụ thể
+python main.py --mode evaluate --model seq2seq_attention_v2 --checkpoint checkpoints/seq2seq_attention_v2/seq2seq_attention_best.pth
 ```
-Kết quả báo cáo chỉ số (MAE, MSE, RMSE, R2, Tỷ lệ sai số $\le \pm 1.5^\circ\text{C}$), biểu đồ so sánh chuỗi 72h và Attention Heatmap được lưu tại thư mục `evalution_results/evaluation_YYYYMMDD/`.
-Khi có nhiều checkpoint của cùng một mô hình, cần chỉ định file bằng `--checkpoint`; báo cáo JSON sẽ lưu đường dẫn checkpoint và tên run huấn luyện nếu checkpoint có metadata run.
+Kết quả báo cáo chỉ số (MAE, MSE, RMSE, R2, Tỷ lệ sai số $\le \pm 1.5^\circ\text{C}$), biểu đồ so sánh chuỗi 72h và Attention Heatmap được lưu tại thư mục `evalution_results/evaluation_YYYYMMDD/` theo từng tên phiên bản (`<model>_v<N>`).
+Khi có nhiều checkpoint của cùng một mô hình, cần chỉ định file bằng `--checkpoint`; chương trình không tự đánh giá bằng trọng số ngẫu nhiên nếu thiếu checkpoint. Báo cáo JSON lưu đường dẫn checkpoint và tên run nếu checkpoint có metadata.
 
 ### 5.4 Chạy Toàn Bộ Đường Ống (End-to-End Pipeline)
 ```bash

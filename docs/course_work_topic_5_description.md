@@ -77,16 +77,15 @@ course_work_topic_5/
 ├── evalution_results/              # Thư mục lưu trữ toàn bộ kết quả đầu ra sau khi chạy đánh giá trên tập Test
 │   └── evaluation_YYYYMMDD/        # Thư mục con lưu bảng chỉ số (CSV/JSON) và hình ảnh biểu đồ theo từng ngày chạy thực nghiệm
 │
-├── runs/                           # Thư mục lưu log TensorBoard tách riêng từng phiên (<model>_<run_name|YYYYMMDD-HHMMSS>/)
+├── runs/                           # Thư mục lưu log TensorBoard tách riêng từng phiên (<model>_v<N>_<YYYYMMDD-HHMMSS>/)
 │
-├── checkpoints/                    # Thư mục lưu file trọng số mô hình (.pth: _epoch_n, _best, _last, _final)
+├── checkpoints/                    # Thư mục lưu file trọng số tách theo từng version (<model>_v1/, <model>_v2/, ..., <model>_vN/ + config.json)
 │
 ├── notebooks/                      # Thư mục chứa Jupyter Notebooks phục vụ chạy thử nghiệm nhanh trên Colab / Local
 │   ├── experiment_demo.ipynb       # Notebook chạy thử nghiệm mô hình, kiểm tra dự báo và đo nhanh hiệu năng
 │   └── jena_climate_eda.ipynb      # Notebook trực quan hóa dữ liệu khám phá (EDA) và kiểm thử quy trình tiền xử lý
 │
-├── app.py                          # Demo CLI: nạp model/checkpoint, dự báo 72h nhiệt độ, lưu biểu đồ PNG và Attention Heatmap vào evalution_results/
-├── main.py                         # Điểm khởi chạy chính (Entry point) điều phối toàn bộ Pipeline (hỗ trợ --mode, --model, --epochs, --device, --run_name)
+├── main.py                         # Điểm khởi chạy chính (Entry point) điều phối toàn bộ Pipeline (hỗ trợ --mode, --model [_vN], --epochs, --device, --run_name, --checkpoint)
 ├── requirements.txt                # Danh sách các thư viện cần cài đặt (torch, pandas, numpy, scikit-learn, matplotlib, tensorboard, psutil...)
 └── README.md                       # Tài liệu hướng dẫn cài đặt môi trường, cấu trúc dự án và các câu lệnh chạy chương trình
 ```

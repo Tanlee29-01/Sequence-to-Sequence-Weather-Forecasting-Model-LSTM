@@ -37,17 +37,18 @@ def forward(
   - **Model 1 (Baseline LSTM):** Trả về `None` (không có cơ chế chú ý).
   - **Model 2 (Attention LSTM) & Model 3 (Transformer):** Trả về bảng trọng số Attention giải thích mô hình, shape **`(Batch_size, 72, 168)`** (tổng trọng số trên 168 giờ quá khứ bằng 1.0 tại mỗi bước dự báo).
 
-### 2.4 Vị trí và Quy chuẩn Đặt tên File Checkpoint (.pth)
-- **Thư mục lưu trữ:** Toàn bộ file trọng số mô hình được lưu tại thư mục [`checkpoints/`](file:///d:/UTH/Deeplearning/course_work_topic_5/checkpoints/).
-- **Cấu trúc đặt tên chuẩn hóa:**
+### 2.4 Vị trí và Quy chuẩn Đặt tên File Checkpoint (.pth) theo Phiên bản (`v1 .. vN`)
+- **Thư mục lưu trữ phân tầng:** Toàn bộ trọng số được tách thành từng thư mục con theo phiên bản tại [`checkpoints/`](file:///d:/UTH/Deeplearning/course_work_topic_5/checkpoints/): `checkpoints/<model_name>_v<N>/` (tự động tăng `v1 -> v2 -> v3 -> ... -> vN` khi huấn luyện mới).
+- **Cấu trúc tệp bên trong `checkpoints/<model_name>_v<N>/`:**
   - Checkpoint từng epoch: `<model_name>_epoch_<n>.pth`
   - File tốt nhất (Best Validation Loss — có timestamp): `<model_name>_<YYYYMMDD-HHMMSS>_best.pth`
   - File tốt nhất rút gọn (Alias): `<model_name>_best.pth`
   - File vòng lặp cuối cùng (có timestamp & alias): `<model_name>_<YYYYMMDD-HHMMSS>_last.pth`, `<model_name>_last.pth`, và `<model_name>_final.pth`
+  - Tệp siêu tham số đi kèm: `config.json` (lưu kiến trúc và cấu hình huấn luyện của phiên bản).
 - **Ví dụ thực tế:**
-  - `checkpoints/seq2seq_lstm_20261125-080743_best.pth` và `checkpoints/seq2seq_lstm_best.pth`
-  - `checkpoints/seq2seq_attention_20261125-082507_best.pth` và `checkpoints/seq2seq_attention_best.pth`
-  - `checkpoints/transformer_20261125-085553_best.pth` và `checkpoints/transformer_best.pth`
+  - `checkpoints/seq2seq_lstm_v2/seq2seq_lstm_best.pth`
+  - `checkpoints/seq2seq_attention_v1/seq2seq_attention_20261121-080327_best.pth`
+  - `checkpoints/transformer_v2/config.json`
 - **Thành phần lưu trong file `.pth`:**
   ```python
   checkpoint_data = {
@@ -56,11 +57,12 @@ def forward(
       "best_val_loss": self.best_val_loss,
       "epoch": epoch,
       "model_name": self.model_name,
+      "model_config": self.model_config,
   }
   ```
 
 ### 2.5 Nhật ký theo dõi trực quan (TensorBoard Logging in `runs/`)
-- **Thư mục lưu trữ tách biệt theo phiên chạy:** `runs/<model_name>_<run_name>/` hoặc mặc định `runs/<model_name>_<YYYYMMDD-HHMMSS>/` (hỗ trợ cờ `--run_name` trong `main.py` để so sánh các lần chạy song song).
+- **Thư mục lưu trữ tách biệt theo phiên bản:** `runs/<model_name>_v<N>_<YYYYMMDD-HHMMSS>/` (hoặc theo `--run_name` trong `main.py` để so sánh các phiên `v1, v2, v3...` song song trên TensorBoard).
 - **Các chỉ số Scalar ghi nhận theo namespace (không trùng lặp):**
   - `Loss/Train`, `Loss/Validation`, `Loss/Test`: Sai số MSE trên từng phân tập.
   - `Accuracy/Train`, `Accuracy/Validation`, `Accuracy/Test`: Tỷ lệ % số giờ dự đoán sai lệch $\le \pm 1.5^\circ\text{C}$ (quy đổi theo `target_scale` trên Train/Val và thang $^\circ\text{C}$ thực trên Test).
