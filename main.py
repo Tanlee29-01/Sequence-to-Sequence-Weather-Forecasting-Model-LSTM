@@ -39,7 +39,6 @@ def seed_everything(seed: int = 42) -> None:
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
 
-
 def compute_file_sha256(file_path: str) -> str:
     """Tính mã băm SHA-256 của một tệp trên đĩa để truy xuất nguồn gốc checkpoint/dữ liệu.
     - Hàm này thực hiện: Đọc tệp theo từng khối 1MB và trả về chuỗi hex SHA-256 đầy đủ.
@@ -71,7 +70,6 @@ def load_config(config_path: str = "configs/config.yaml") -> Dict:
         config = yaml.safe_load(f)
     return config
 
-
 def get_device(device_str: str = "auto") -> torch.device:
     """Xác định và trả về thiết bị tính toán tối ưu nhất (CUDA GPU hoặc CPU).
     - Hàm này thực hiện: Kiểm tra khả năng tương thích phần cứng CUDA và lựa chọn thiết bị theo yêu cầu hoặc tự động.
@@ -88,7 +86,6 @@ def get_device(device_str: str = "auto") -> torch.device:
         return torch.device("cuda")
     else:
         return torch.device("cpu")
-
 
 def parse_model_arg(model_arg: str) -> Tuple[str, Optional[str]]:
     """Tách tên mô hình gốc và hậu tố phiên bản (v1, v2, ..., v_n) từ tham số CLI --model.
@@ -108,7 +105,6 @@ def parse_model_arg(model_arg: str) -> Tuple[str, Optional[str]]:
             f"(có thể kèm hậu tố _v1, _v2, ..., _vN)."
         )
     return match.group(1), match.group(2)
-
 
 def list_model_versions(base_dir: str, base_model: str) -> List[int]:
     """Liệt kê tất cả số hiệu phiên bản v1, v2, ..., vN đã tồn tại của một mô hình trong thư mục.
@@ -130,7 +126,6 @@ def list_model_versions(base_dir: str, base_model: str) -> List[int]:
             if m:
                 versions.append(int(m.group(1)))
     return sorted(set(versions))
-
 
 def discover_all_model_versions(checkpoints_root: str) -> List[Tuple[str, str]]:
     """Quét và trả về toàn bộ các cặp (base_model, version) hợp lệ có thư mục trong checkpoints/.

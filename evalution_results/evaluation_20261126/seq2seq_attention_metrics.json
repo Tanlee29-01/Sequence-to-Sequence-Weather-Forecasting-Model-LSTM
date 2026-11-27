@@ -1,0 +1,15 @@
+{
+    "Model": "seq2seq_attention",
+    "MAE": 2.6807,
+    "MSE": 11.959,
+    "RMSE": 3.4582,
+    "R2": 0.804,
+    "Within_Tolerance_Rate_Pct": 37.26,
+    "loss_test": 11.959,
+    "accuracy_test": 37.26,
+    "Latency_ms_per_batch": 288.5,
+    "Latency_ms_per_sample": 4.5078,
+    "RAM_MB": 480.06,
+    "VRAM_MB": 0.0,
+    "Checkpoint": "checkpoints/seq2seq_attention_best.pth"
+}
