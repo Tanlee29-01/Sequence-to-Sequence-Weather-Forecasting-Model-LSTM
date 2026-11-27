@@ -174,36 +174,20 @@ print("Smoke Test for ModelEvaluator PASSED!")
 
 ---
 
-### 5.2 Đầu ra mẫu của kiểm thử (Expected Test Output)
+### 5.2 Đầu ra thực tế của kiểm thử (Actual Smoke Test Output)
 
-Khi thực thi câu lệnh `python tests/test_evaluation.py` hoặc `python src/evaluation.py`, terminal sẽ xuất hiện định dạng kết quả tiêu chuẩn như sau:
+Khi thực thi câu lệnh `python tests/test_evaluation.py`, terminal xuất ra kết quả thực tế như sau:
 
 ```text
 ======================================================================
 [SMOKE TEST] BẮT ĐẦU KIỂM THỬ QUY TRÌNH ĐÁNH GIÁ VÀ BENCHMARK (TOPIC 5)
 ======================================================================
-[INIT] Khởi tạo ModelEvaluator với Seq2Seq Attention LSTM (Device: cpu)
-       Ngưỡng dung sai nhiệt độ: +-1.5°C | Thư mục kết quả: evalution_results/
-
-[1/3] Kiểm tra tính toán các chỉ số sai số hồi quy...
-      -> Dữ liệu kiểm thử: 10 mẫu chuỗi thời gian giải chuẩn hóa (°C)
-      -> MAE  (Mean Absolute Error):        0.6382 °C  (Thỏa mãn <= 2.0°C) [OK]
-      -> MSE  (Mean Squared Error):         0.6419 (°C)^2                  [OK]
-      -> RMSE (Root Mean Squared Error):    0.8012 °C  (Thỏa mãn <= 2.5°C) [OK]
-      -> R2   (Hệ số xác định):             0.9745     (Thỏa mãn >= 0.70)  [OK]
-      -> Within Tolerance Rate (+-1.5°C):   92.40%     (Thỏa mãn >= 65%)   [OK]
-
-[2/3] Kiểm tra kịch bản đo độ trễ suy luận (Latency Benchmark Protocol)...
-      -> Giai đoạn Warmup: 1 lần forward độc lập... Hoàn tất
-      -> Giai đoạn Benchmark: 3 lần forward đo lường... Hoàn tất
-      -> Latency trên mỗi Batch (2 mẫu): 14.82 ms (Thỏa mãn <= 100 ms)   [OK]
-      -> Latency trên mỗi Mẫu (Sample):   7.41 ms (Thỏa mãn <= 10 ms)    [OK]
-      -> Lượng RAM hệ thống tiêu thụ:   145.2 MB (Thỏa mãn <= 2000 MB)  [OK]
-      -> Lượng GPU VRAM chiếm dụng:       0.0 MB (Chế độ CPU)            [OK]
-
-[3/3] Dọn dẹp thư mục kiểm thử...
-      -> Đã xuất thử nghiệm và xác minh cấu trúc tệp JSON & summary_evaluation.csv
-      -> Dọn dẹp hoàn tất [OK]
+[1/3] Kiểm tra tính toán các chỉ số sai số tổng thể và theo horizon...
+      -> MAE=0.6391 | RMSE=0.8128 | R2=0.9722 | 1-24h=0.6085 | 25-48h=0.6172 | 49-72h=0.6915 [OK]
+[2/3] Kiểm tra kịch bản đánh giá & đo độ trễ suy luận (Latency Benchmark Protocol)...
+      -> Batch: 16.1177 ms | Amortized: 8.0589 ms | Single: 13.0526 ms | RAM: 352.46 MB [OK]
+[3/3] Xác minh cô lập thư mục tạm và tự động dọn dẹp...
+      -> Dọn dẹp hoàn tất (không ghi rác vào evalution_results/) [OK]
 ----------------------------------------------------------------------
 [SUCCESS] TOÀN BỘ BÀI KIỂM THỬ ĐÁNH GIÁ ĐÃ VƯỢT QUA XUẤT SẮC!
 ======================================================================
@@ -212,11 +196,65 @@ Khi thực thi câu lệnh `python tests/test_evaluation.py` hoặc `python src/
 #### Bảng đối chiếu tiêu chí nghiệm thu kiểm thử đánh giá & benchmark:
 | Chỉ số kiểm thử | Ngưỡng yêu cầu đồ án | Kết quả Smoke Test | Đánh giá |
 | :--- | :---: | :---: | :---: |
-| **Sai số MAE** | $\le 2.0^\circ\text{C}$ | $0.6382^\circ\text{C}$ | **ĐẠT (PASSED)** |
-| **Sai số RMSE** | $\le 2.5^\circ\text{C}$ | $0.8012^\circ\text{C}$ | **ĐẠT (PASSED)** |
-| **Hệ số xác định $R^2$** | $\ge 0.70$ | $0.9745$ | **ĐẠT (PASSED)** |
-| **Tỷ lệ trong dung sai $\pm 1.5^\circ\text{C}$** | $\ge 65.0\%$ | $92.40\%$ | **ĐẠT (PASSED)** |
-| **Độ trễ suy luận / Batch** | $\le 100\text{ ms}$ | $14.82\text{ ms}$ | **ĐẠT (PASSED)** |
-| **Bộ nhớ RAM tiến trình** | $\le 2000\text{ MB}$ | $145.2\text{ MB}$ | **ĐẠT (PASSED)** |
-| **Xuất tệp JSON & CSV** | Tự động sinh báo cáo | Sinh đầy đủ JSON & CSV | **ĐẠT (PASSED)** |
+| **Sai số MAE** | $\le 2.0^\circ\text{C}$ | $0.6391^\circ\text{C}$ | **ĐẠT (PASSED)** |
+| **Sai số RMSE** | $\le 2.5^\circ\text{C}$ | $0.8128^\circ\text{C}$ | **ĐẠT (PASSED)** |
+| **Hệ số xác định $R^2$** | $\ge 0.70$ | $0.9722$ | **ĐẠT (PASSED)** |
+| **Độ trễ suy luận / Batch** | $\le 100\text{ ms}$ | $16.1177\text{ ms}$ | **ĐẠT (PASSED)** |
+| **Bộ nhớ RAM tiến trình** | $\le 2000\text{ MB}$ | $352.46\text{ MB}$ | **ĐẠT (PASSED)** |
+| **Cô lập & dọn dẹp tệp tạm** | Không ghi rác `evalution_results/` | Tự động dọn dẹp hoàn tất | **ĐẠT (PASSED)** |
+
+---
+
+## 6. Báo Cáo Kết Quả Thực Nghiệm Thực Tế (`evaluation_20261127`)
+
+Phần này tổng hợp, đối chiếu và nhận xét kết quả đánh giá thực tế trên **tập Test độc lập (`10.281` mẫu)** được lưu tại [`evalution_results/evaluation_20261127/`](../evalution_results/evaluation_20261127/). Trong đợt chạy mới nhất này, hệ thống đánh giá hai phiên bản của mô hình **Seq2Seq Attention LSTM** (`seq2seq_attention_v1` và `seq2seq_attention_v2`) trên thiết bị `cpu` (`batch_size = 64`, `warmup_runs = 10`, `benchmark_runs = 50`).
+
+### 6.1 Khác biệt cấu hình giữa hai phiên bản
+Theo tệp cấu hình lưu kèm tại `checkpoints/seq2seq_attention_v1/config.json` và `checkpoints/seq2seq_attention_v2/config.json`, cả hai phiên bản dùng chung kiến trúc (`input_dim=14`, `hidden_dim=128`, `num_layers=2`, `dropout=0.2`, `seq_len=168`, `pred_len=72`, `epochs=50`, `early_stopping_patience=7`, `learning_rate=0.001`), chỉ khác nhau ở chiến lược điều chỉnh tốc độ học:
+- **`seq2seq_attention_v1`:** `scheduler_type = "none"` (giữ nguyên learning rate cố định).
+- **`seq2seq_attention_v2`:** `scheduler_type = "ReduceLROnPlateau"` (`lr_patience = 3`, `lr_factor = 0.5`, `lr_min = 1e-05`).
+
+### 6.2 Tổng hợp chỉ số định lượng trên toàn tập Test (10.281 mẫu)
+
+| Chỉ số đánh giá | Ngưỡng mục tiêu (Spec) | `seq2seq_attention_v1` | `seq2seq_attention_v2` | Chênh lệch (`v2` vs `v1`) | Đánh giá (`v2`) |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **MAE (°C)** | $\le 2.0^\circ\text{C}$ ($\le 1.5^\circ\text{C}$ kỳ vọng) | `2.6807` | **`2.5503`** | `-0.1304°C` (tốt hơn) | Chưa đạt ngưỡng |
+| **MSE (°C²)** | Càng nhỏ càng tốt | `11.9590` | **`10.8977`** | `-1.0613` (tốt hơn) | Cải thiện |
+| **RMSE (°C)** | $\le 2.5^\circ\text{C}$ | `3.4582` | **`3.3012`** | `-0.1570°C` (tốt hơn) | Chưa đạt ngưỡng |
+| **Hệ số $R^2$** | $\ge 0.70$ | `0.8040` | **`0.8214`** | `+0.0174` (tốt hơn) | **ĐẠT** |
+| **Tỷ lệ dung sai $\le \pm 1.5^\circ\text{C}$** | $\ge 65.0\%$ | `37.26%` | **`39.13%`** | `+1.87%` (tốt hơn) | Chưa đạt ngưỡng |
+| **Latency / Batch (64 mẫu, CPU)** | $\le 100\text{ ms}$ | **`228.13 ms`** | `237.58 ms` | `+9.45 ms` | Vượt ngưỡng (do chạy CPU) |
+| **Latency / Single Sample (CPU)** | $\le 5\text{ ms}$ | `14.68 ms` | **`14.60 ms`** | `-0.08 ms` | Vượt ngưỡng (do chạy CPU) |
+| **Latency Amortized / Sample (CPU)** | Tham chiếu batch | **`3.56 ms`** | `3.71 ms` | `+0.15 ms` | Nhanh khi chạy theo batch |
+| **RAM tiến trình (RSS)** | $\le 2000\text{ MB}$ | **`585.36 MB`** | `585.84 MB` | `+0.48 MB` | **ĐẠT** |
+| **Peak GPU VRAM** | $\le 4000\text{ MB}$ | `0.0 MB` (CPU) | `0.0 MB` (CPU) | `—` | **—** |
+
+### 6.3 Phân rã sai số theo từng khung thời gian dự báo (1–24h, 25–48h, 49–72h)
+
+| Khung dự báo | Chỉ số | `seq2seq_attention_v1` | `seq2seq_attention_v2` | Nhận xét |
+| :--- | :--- | :---: | :---: | :--- |
+| **Ngày 1 (`1–24h`)** | `MAE` / `RMSE` / `R2` / `Acc ±1.5°C` | `1.8597°C` / `2.4457°C` / `0.9016` / `51.86%` | **`1.7629°C` / `2.3171°C` / `0.9117` / `53.54%`** | Đạt chuẩn `MAE <= 2.0°C`, `RMSE <= 2.5°C`, `R2 >= 0.70` |
+| **Ngày 2 (`25–48h`)** | `MAE` / `RMSE` / `R2` / `Acc ±1.5°C` | `2.8524°C` / `3.5784°C` / `0.7900` / `32.61%` | **`2.7160°C` / `3.4168°C` / `0.8086` / `34.63%`** | Sai số tăng rõ rệt so với ngày 1 |
+| **Ngày 3 (`49–72h`)** | `MAE` / `RMSE` / `R2` / `Acc ±1.5°C` | `3.3299°C` / `4.1342°C` / `0.7212` / `27.29%` | **`3.1721°C` / `3.9559°C` / `0.7448` / `29.22%`** | Dự báo xa nhất nên độ bất định lớn nhất |
+
+> **Nhận xét xu hướng sai số:** Cả hai phiên bản đều thể hiện rõ quy luật tự nhiên của dự báo chuỗi thời gian đa bước (Autoregressive Multi-step Forecasting): sai số tích lũy dần theo độ dài dự báo. Ở khung ngắn hạn **24 giờ đầu tiên**, mô hình hoạt động rất tốt ($R^2 > 0.91$, `MAE = 1.76°C` đạt ngưỡng $\le 2.0^\circ\text{C}$), nhưng khi kéo dài sang **ngày 2 và ngày 3**, sai số `MAE` tăng lên `2.72°C` và `3.17°C`, kéo chỉ số trung bình chung cả 72 giờ vượt ngưỡng `2.0°C`.
+
+### 6.4 Phân tích trực quan từ biểu đồ thực nghiệm
+
+1. **Biểu đồ dự báo chuỗi 72 giờ (`*_sample_0_forecast.png`):**
+   - Trong [biểu đồ dự báo của `v1`](../evalution_results/evaluation_20261127/seq2seq_attention_v1_sample_0_forecast.png) và [biểu đồ dự báo của `v2`](../evalution_results/evaluation_20261127/seq2seq_attention_v2_sample_0_forecast.png), đường dự báo (nét đứt đỏ) bắt kịp tốt **chu kỳ ngày – đêm 24 giờ** (lên đỉnh vào khoảng giờ +22, +47, +69 và xuống đáy vào khoảng giờ +14, +37).
+   - **Điểm cải thiện của `v2` so với `v1`:** Ở đỉnh ngày 1 (~+22h), đỉnh ngày 2 (~+47h) và đỉnh ngày 3 (~+69h), `v2` bám sát biên độ thực tế hơn (ví dụ tại đỉnh +47h, `v1` vọt lên gần `15°C` so với thực tế `~10.3°C`, trong khi `v2` giảm độ vọt lố xuống còn `~13.1°C`).
+   - **Hạn chế còn tồn tại:** Tại các điểm đáy nhiệt độ thấp ban đêm (quanh +14h và +37h), cả `v1` và `v2` đều có xu hướng dự báo cao hơn thực tế (nhiệt độ thực xuống `~1–2.7°C` nhưng dự báo chỉ xuống `~5.7–6.4°C`), làm phần lớn các giờ ban đêm vượt ra ngoài dải dung sai tô mờ $\pm 1.5^\circ\text{C}$.
+
+2. **Bản đồ nhiệt Attention (`*_attention_heatmap.png`):**
+   - Ở [`seq2seq_attention_v1_attention_heatmap.png`](../evalution_results/evaluation_20261127/seq2seq_attention_v1_attention_heatmap.png), dải trọng số chú ý nằm trong khoảng rất hẹp (`0.0054 – 0.0066`, tiệm cận mức chia đều $1/168 \approx 0.00595$) và các dải màu gần như **thẳng đứng đồng nhất** từ bước tương lai `1` đến `72`. Điều này cho thấy cơ chế Attention ở `v1` gần như giữ một phân phối chú ý tĩnh lên một vài mốc quá khứ cố định (quanh giờ `~68`, `~40`, `~86`), chưa linh hoạt thay đổi theo từng bước giải mã.
+   - Ở [`seq2seq_attention_v2_attention_heatmap.png`](../evalution_results/evaluation_20261127/seq2seq_attention_v2_attention_heatmap.png), biên độ phân hóa trọng số rộng gấp đôi (`0.0040 – 0.0080`) và bắt đầu hình thành các **nhịp sáng – tối biến thiên theo trục dọc** (khi bước dự báo tương lai dịch chuyển theo chu kỳ, cường độ chú ý tại các cột quá khứ cũng tăng giảm theo nhịp). Tuy nhiên, bản đồ nhiệt vẫn chưa tạo thành các đường chéo sắc nét cách đều đúng 24 giờ như kỳ vọng lý tưởng ở Mục 3.
+
+### 6.5 Kết luận và đề xuất cải tiến cho đợt chạy tiếp theo
+- **Kết luận chính:** Việc bật **`ReduceLROnPlateau` ở `seq2seq_attention_v2`** đã mang lại cải thiện nhất quán trên **toàn bộ các chỉ số chất lượng** (`MAE` giảm `4.86%`, `RMSE` giảm `4.54%`, $R^2$ tăng từ `0.8040` lên `0.8214`, và tỷ lệ dung sai tăng ở cả 3 ngày dự báo). Mô hình đạt tiêu chuẩn ở khả năng giải thích xu hướng ($R^2 = 0.8214 \ge 0.70$) và bộ nhớ RAM gọn nhẹ (`~585.8 MB <= 2000 MB`).
+- **Khoảng trống cần hoàn thiện:**
+  1. Thư mục `evaluation_20261127` hiện mới chạy đánh giá cho 2 phiên bản của `seq2seq_attention`, chưa bao gồm `seq2seq_lstm` và `transformer` để lập bảng đối đầu đầy đủ giữa 3 kiến trúc.
+  2. Độ trễ suy luận (`~237 ms/batch`, `~14.6 ms/sample`) hiện đo trên **CPU**; cần đo lại trên **GPU (CUDA)** để đánh giá đúng năng lực đáp ứng ngưỡng $\le 100\text{ ms/batch}$ và $\le 5\text{ ms/sample}$.
+  3. Để kéo `MAE` tổng thể xuống $\le 2.0^\circ\text{C}$ và cải thiện tỷ lệ $\pm 1.5^\circ\text{C}$ ở ngày 2–3 (nhất là các đáy nhiệt độ ban đêm), có thể thử nghiệm: (i) dùng `CosineAnnealingLR` hoặc điều chỉnh `teacher_forcing_decay`, (ii) tăng `hidden_dim` / bổ sung đặc trưng thời gian tuần hoàn (`sin/cos` của giờ trong ngày và ngày trong năm), hoặc (iii) đối chiếu với `transformer` có khả năng chú ý trực tiếp không bị suy giảm theo bước đệ quy.
+
 
