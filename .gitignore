@@ -37,14 +37,14 @@ data/*.gz
 !data/.gitkeep
 
 # =============================================================
-# TensorBoard logs (runs/)
+# TensorBoard logs (runs/) — Mở track để chia sẻ log thực nghiệm
 # =============================================================
-runs/
+# runs/
 
 # =============================================================
-# Kết quả đánh giá & biểu đồ sinh ra
+# Kết quả đánh giá & biểu đồ sinh ra — Mở track báo cáo & biểu đồ
 # =============================================================
-evalution_results/
+# evalution_results/
 
 # =============================================================
 # Jupyter Notebook checkpoints
