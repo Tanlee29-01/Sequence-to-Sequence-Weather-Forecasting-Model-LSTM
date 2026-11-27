@@ -95,6 +95,7 @@ training:
 evaluation:
   tolerance_degC: 1.5   # Ngưỡng dung sai ±1.5 độ C để tính tỷ lệ chính xác
   warmup_runs: 10       # Số lần chạy khởi động trước khi đo Latency
+  benchmark_runs: 50    # Số lần lặp đo độ trễ suy luận trung bình
 
 paths:
   checkpoints_dir: "checkpoints"

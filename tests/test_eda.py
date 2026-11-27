@@ -5,6 +5,7 @@ và xuất đủ 3 biểu đồ trực quan hóa.
 
 import os
 import sys
+import tempfile
 import unittest
 import numpy as np
 import pandas as pd
@@ -22,7 +23,7 @@ class TestEDA(unittest.TestCase):
     """Bộ kiểm thử cho EDA pipeline."""
 
     def setUp(self):
-        """Khởi tạo mock train DataFrame."""
+        """Khởi tạo mock train DataFrame trong thư mục tạm cô lập."""
         date_range = pd.date_range("2012-01-01", periods=200, freq="1h")
         mock_data = np.random.randn(200, 14) * 4 + 10
         self.mock_train_df = pd.DataFrame(
@@ -30,14 +31,12 @@ class TestEDA(unittest.TestCase):
             index=date_range,
             columns=JenaDataModule.DEFAULT_FEATURES,
         )
-        self.test_output_dir = "evalution_results/test_eda_run"
+        self._tmp_dir = tempfile.TemporaryDirectory()
+        self.test_output_dir = self._tmp_dir.name
 
     def tearDown(self):
-        """Dọn dẹp thư mục ảnh EDA."""
-        if os.path.exists(self.test_output_dir):
-            for f in os.listdir(self.test_output_dir):
-                os.remove(os.path.join(self.test_output_dir, f))
-            os.rmdir(self.test_output_dir)
+        """Dọn dẹp thư mục ảnh EDA tạm."""
+        self._tmp_dir.cleanup()
 
     def test_run_eda_generates_all_plots(self):
         """Kiểm tra pipeline EDA xuất ra đủ 6 tệp hình ảnh PNG cốt lõi trên tập Train."""
@@ -61,19 +60,15 @@ def run_smoke_test():
         index=date_range,
         columns=JenaDataModule.DEFAULT_FEATURES,
     )
-    test_dir = "evalution_results/smoke_test_eda"
+    with tempfile.TemporaryDirectory() as test_dir:
+        print("[1/2] Chạy EDA Pipeline xuất 6 biểu đồ cốt lõi trong thư mục tạm...")
+        files = run_eda_pipeline(mock_train, output_dir=test_dir)
+        assert len(files) == 6
+        for f in files:
+            assert os.path.exists(f)
+        print("      -> 6 biểu đồ xuất thành công: PASSED")
 
-    print("[1/2] Chạy EDA Pipeline xuất 6 biểu đồ cốt lõi...")
-    files = run_eda_pipeline(mock_train, output_dir=test_dir)
-    assert len(files) == 6
-    for f in files:
-        assert os.path.exists(f)
-        os.remove(f)
-    print("      -> 6 biểu đồ xuất thành công: PASSED")
-
-    print("[2/2] Dọn dẹp thư mục...")
-    if os.path.exists(test_dir):
-        os.rmdir(test_dir)
+        print("[2/2] Dọn dẹp thư mục tạm...")
     print("      -> Dọn dẹp hoàn tất [OK]")
 
     print("-" * 70)

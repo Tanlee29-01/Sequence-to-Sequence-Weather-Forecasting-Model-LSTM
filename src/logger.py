@@ -192,22 +192,25 @@ class TensorBoardLogger:
 
 
 if __name__ == "__main__":
-    print("[TEST] Bắt đầu kiểm thử TensorBoardLogger...")
-    logger = TensorBoardLogger(log_dir="runs", experiment_name="test_logger")
+    import tempfile
 
-    # Ghi metric thử nghiệm
-    logger.log_metrics(epoch=1, train_loss=0.45, val_loss=0.42, lr=0.001, ram_mb=120.0, vram_mb=0.0)
+    print("[TEST] Bắt đầu kiểm thử TensorBoardLogger trong thư mục tạm cô lập...")
+    with tempfile.TemporaryDirectory() as tmp_log_dir:
+        logger = TensorBoardLogger(log_dir=tmp_log_dir, experiment_name="test_logger")
 
-    # Ghi hình so sánh dự báo
-    dummy_true = np.sin(np.linspace(0, 3 * np.pi, 72)) * 10 + 20
-    dummy_pred = dummy_true + np.random.randn(72) * 0.5
-    logger.log_prediction_figure(epoch=1, y_true=dummy_true, y_pred=dummy_pred)
+        # Ghi metric thử nghiệm
+        logger.log_metrics(epoch=1, train_loss=0.45, val_loss=0.42, lr=0.001, ram_mb=120.0, vram_mb=0.0)
 
-    # Ghi Attention Heatmap
-    dummy_attn = np.random.rand(72, 168)
-    dummy_attn = dummy_attn / dummy_attn.sum(axis=1, keepdims=True)
-    logger.log_attention_heatmap(epoch=1, attention_matrix=dummy_attn)
+        # Ghi hình so sánh dự báo
+        dummy_true = np.sin(np.linspace(0, 3 * np.pi, 72)) * 10 + 20
+        dummy_pred = dummy_true + np.random.randn(72) * 0.5
+        logger.log_prediction_figure(epoch=1, y_true=dummy_true, y_pred=dummy_pred)
 
-    logger.close()
-    assert os.path.exists("runs/test_logger")
+        # Ghi Attention Heatmap
+        dummy_attn = np.random.rand(72, 168)
+        dummy_attn = dummy_attn / dummy_attn.sum(axis=1, keepdims=True)
+        logger.log_attention_heatmap(epoch=1, attention_matrix=dummy_attn)
+
+        logger.close()
+        assert os.path.exists(os.path.join(tmp_log_dir, "test_logger"))
     print("[SUCCESS] Toàn bộ bài kiểm tra cho TensorBoardLogger đã vượt qua xuất sắc!")

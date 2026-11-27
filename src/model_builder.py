@@ -25,6 +25,7 @@ class ModelBuilder_Seq2SeqLSTM(nn.Module):
         dropout: float = 0.2,
         output_dim: int = 1,
         target_idx: int = 1,
+        pred_len: int = 72,
     ):
         """Khởi tạo các thành phần mạng Encoder-Decoder LSTM cơ sở.
         - Hàm này thực hiện: Cấu hình các lớp Encoder LSTM, Decoder LSTM, tầng tuyến tính đầu ra và lưu các siêu tham số mạng.
@@ -35,6 +36,7 @@ class ModelBuilder_Seq2SeqLSTM(nn.Module):
             + dropout: Tỷ lệ ngắt kết nối ngẫu nhiên chống quá khớp (mặc định 0.2).
             + output_dim: Số chiều dự báo đầu ra (1 - nhiệt độ T).
             + target_idx: Vị trí cột nhiệt độ trong 14 thuộc tính đầu vào (mặc định 1).
+            + pred_len: Số bước thời gian dự báo mặc định khi trg=None (mặc định 72).
         - Output:
             + Không trả về giá trị (khởi tạo đối tượng mô hình nn.Module).
         """
@@ -44,6 +46,7 @@ class ModelBuilder_Seq2SeqLSTM(nn.Module):
         self.num_layers = num_layers
         self.output_dim = output_dim
         self.target_idx = target_idx
+        self.pred_len = pred_len
 
         self.encoder = nn.LSTM(
             input_size=input_dim,
@@ -78,7 +81,7 @@ class ModelBuilder_Seq2SeqLSTM(nn.Module):
             + attention_weights: Trả về None vì mô hình cơ sở không có cơ chế chú ý.
         """
         batch_size = src.size(0)
-        pred_len = 72 if trg is None else trg.size(1)
+        pred_len = self.pred_len if trg is None else trg.size(1)
 
         # 1. Encoder nén chuỗi 168 giờ
         _, (h_n, c_n) = self.encoder(src)
@@ -169,6 +172,7 @@ class ModelBuilder_Seq2SeqAttention(nn.Module):
         dropout: float = 0.2,
         output_dim: int = 1,
         target_idx: int = 1,
+        pred_len: int = 72,
     ):
         """Khởi tạo mô hình Seq2Seq kết hợp Bahdanau Attention.
         - Hàm này thực hiện: Xây dựng Encoder, lớp Attention, Decoder LSTMCell (nhận đầu vào ghép giữa giá trị trước và vector ngữ cảnh) và tầng dự báo đầu ra.
@@ -179,6 +183,7 @@ class ModelBuilder_Seq2SeqAttention(nn.Module):
             + dropout: Tỷ lệ ngắt kết nối ngẫu nhiên (0.2).
             + output_dim: Số chiều đầu ra dự báo (1).
             + target_idx: Chỉ mục của cột nhiệt độ mục tiêu (1).
+            + pred_len: Số bước thời gian dự báo mặc định khi trg=None (mặc định 72).
         - Output:
             + Không trả về giá trị (khởi tạo đối tượng mô hình).
         """
@@ -188,6 +193,7 @@ class ModelBuilder_Seq2SeqAttention(nn.Module):
         self.num_layers = num_layers
         self.output_dim = output_dim
         self.target_idx = target_idx
+        self.pred_len = pred_len
 
         self.encoder = nn.LSTM(
             input_size=input_dim,
@@ -225,7 +231,7 @@ class ModelBuilder_Seq2SeqAttention(nn.Module):
             + attn_weights: Bảng trọng số Attention giải thích mô hình, shape (Batch_size, 72, 168).
         """
         batch_size = src.size(0)
-        pred_len = 72 if trg is None else trg.size(1)
+        pred_len = self.pred_len if trg is None else trg.size(1)
 
         # 1. Encoder trích xuất toàn bộ trạng thái ẩn
         enc_outputs, (h_n, c_n) = self.encoder(src)  # enc_outputs: (Batch, 168, hidden_dim)
@@ -330,6 +336,7 @@ class ModelBuilder_TimeSeriesTransformer(nn.Module):
         dropout: float = 0.1,
         output_dim: int = 1,
         target_idx: int = 1,
+        pred_len: int = 72,
     ):
         """Khởi tạo cấu trúc mạng Transformer cho chuỗi thời gian.
         - Hàm này thực hiện: Cấu hình các lớp chiếu đầu vào, mã hóa vị trí, các khối Encoder/Decoder đa đầu và tầng tuyến tính chiếu về nhiệt độ.
@@ -343,14 +350,20 @@ class ModelBuilder_TimeSeriesTransformer(nn.Module):
             + dropout: Tỷ lệ dropout chống quá khớp (mặc định 0.1).
             + output_dim: Số chiều kết quả đầu ra (1).
             + target_idx: Chỉ mục của cột nhiệt độ trong dữ liệu đầu vào (1).
+            + pred_len: Số bước thời gian dự báo mặc định khi trg=None (mặc định 72).
         - Output:
             + Không trả về giá trị (khởi tạo đối tượng nn.Module).
         """
         super().__init__()
         self.input_dim = input_dim
         self.d_model = d_model
+        self.nhead = nhead
+        self.num_encoder_layers = num_encoder_layers
+        self.num_decoder_layers = num_decoder_layers
+        self.dim_feedforward = dim_feedforward
         self.output_dim = output_dim
         self.target_idx = target_idx
+        self.pred_len = pred_len
 
         # Chiếu từ 14 đặc trưng lên không gian d_model
         self.enc_input_proj = nn.Linear(input_dim, d_model)
@@ -414,7 +427,7 @@ class ModelBuilder_TimeSeriesTransformer(nn.Module):
         """
         device = src.device
         batch_size = src.size(0)
-        pred_len = 72 if trg is None else trg.size(1)
+        pred_len = self.pred_len if trg is None else trg.size(1)
 
         # 1. Mã hóa đầu vào qua Encoder
         enc_emb = self.enc_input_proj(src)  # (Batch, 168, d_model)
@@ -448,9 +461,6 @@ class ModelBuilder_TimeSeriesTransformer(nn.Module):
             predictions = torch.cat(outputs, dim=1)  # (Batch, 72, 1)
 
         # Tính ma trận Attention giải thích giữa Decoder outputs và Encoder memory
-        # Sử dụng dot-product tương quan giữa decoder representation và encoder memory
-        dec_proj = F.normalize(predictions, p=2, dim=-1)
-        # Tính tương quan Attention xấp xỉ giữa 72 bước đầu ra và 168 bước đầu vào
         # (Batch, 72, d_model) x (Batch, d_model, 168) -> (Batch, 72, 168)
         attn_scores = torch.bmm(
             F.normalize(self.dec_input_proj(predictions), p=2, dim=-1),
@@ -470,32 +480,46 @@ def build_model(model_name: str, config: Dict) -> nn.Module:
     - Hàm này thực hiện: Đọc tên mô hình chỉ định và truyền các siêu tham số phù hợp từ từ điển cấu hình để tạo thực thể mạng.
     - Input:
         + model_name: Chuỗi định danh mô hình ('seq2seq_lstm', 'seq2seq_attention', 'transformer').
-        + config: Từ điển cấu hình chứa các siêu tham số mạng.
+        + config: Từ điển cấu hình chứa các siêu tham số mạng và dữ liệu.
     - Output:
         + Thực thể mô hình kế thừa từ nn.Module tuân thủ chuẩn giao diện forward.
     """
     model_name = model_name.lower()
     model_cfg = config.get("models", {}).get(model_name, {})
+    data_cfg = config.get("data", {})
+    pred_len = int(data_cfg.get("pred_len", 72))
+    all_features = data_cfg.get("all_features")
+    target_col = data_cfg.get("target_col", "T (degC)")
+    target_idx = (
+        all_features.index(target_col)
+        if isinstance(all_features, list) and target_col in all_features
+        else 1
+    )
+    default_input_dim = int(data_cfg.get("num_features", 14))
 
     if model_name in ["seq2seq_lstm", "baseline"]:
         return ModelBuilder_Seq2SeqLSTM(
-            input_dim=model_cfg.get("input_dim", 14),
+            input_dim=model_cfg.get("input_dim", default_input_dim),
             hidden_dim=model_cfg.get("hidden_dim", 128),
             num_layers=model_cfg.get("num_layers", 2),
             dropout=model_cfg.get("dropout", 0.2),
             output_dim=model_cfg.get("output_dim", 1),
+            target_idx=target_idx,
+            pred_len=pred_len,
         )
     elif model_name in ["seq2seq_attention", "attention"]:
         return ModelBuilder_Seq2SeqAttention(
-            input_dim=model_cfg.get("input_dim", 14),
+            input_dim=model_cfg.get("input_dim", default_input_dim),
             hidden_dim=model_cfg.get("hidden_dim", 128),
             num_layers=model_cfg.get("num_layers", 2),
             dropout=model_cfg.get("dropout", 0.2),
             output_dim=model_cfg.get("output_dim", 1),
+            target_idx=target_idx,
+            pred_len=pred_len,
         )
     elif model_name in ["transformer", "timeseries_transformer"]:
         return ModelBuilder_TimeSeriesTransformer(
-            input_dim=model_cfg.get("input_dim", 14),
+            input_dim=model_cfg.get("input_dim", default_input_dim),
             d_model=model_cfg.get("d_model", 64),
             nhead=model_cfg.get("nhead", 4),
             num_encoder_layers=model_cfg.get("num_encoder_layers", 2),
@@ -503,6 +527,8 @@ def build_model(model_name: str, config: Dict) -> nn.Module:
             dim_feedforward=model_cfg.get("dim_feedforward", 256),
             dropout=model_cfg.get("dropout", 0.1),
             output_dim=model_cfg.get("output_dim", 1),
+            target_idx=target_idx,
+            pred_len=pred_len,
         )
     else:
         raise ValueError(f"Không nhận dạng được tên mô hình: {model_name}")

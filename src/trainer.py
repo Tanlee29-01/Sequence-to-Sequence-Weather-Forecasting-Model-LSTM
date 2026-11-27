@@ -412,26 +412,101 @@ class ModelTrainer:
 
         return save_path
 
-    def load_checkpoint(self, checkpoint_path: str) -> None:
-        """Nạp trọng số mô hình đã lưu từ file checkpoint .pth.
-        - Hàm này thực hiện: Đọc file .pth và cập nhật state_dict vào mô hình mạng.
+    def load_checkpoint(
+        self,
+        checkpoint_path: str,
+        expected_model_name: Optional[str] = None,
+        expected_model_config: Optional[Dict] = None,
+        strict: bool = True,
+    ) -> Dict:
+        """Nạp trọng số mô hình đã lưu từ file checkpoint .pth với kiểm tra khớp kiến trúc nghiêm ngặt.
+        - Hàm này thực hiện: Đọc file .pth, kiểm chứng tên mô hình, siêu tham số kiến trúc và kích thước toàn bộ tensor trong state_dict trước khi gọi load_state_dict(..., strict=True).
         - Input:
             + checkpoint_path: Đường dẫn tới file trọng số .pth cần nạp.
+            + expected_model_name: Tên kiến trúc kỳ vọng để đối chiếu với checkpoint (mặc định self.model_name).
+            + expected_model_config: Từ điển cấu hình kiến trúc kỳ vọng để đối chiếu (mặc định self.model_config).
+            + strict: Bắt buộc khớp 100% khóa trọng số khi gọi load_state_dict (mặc định True).
         - Output:
-            + Không trả về giá trị (cập nhật trực tiếp vào thuộc tính self.model).
+            + checkpoint_data: Từ điển metadata và state_dict đọc từ file checkpoint.
         """
-        if not os.path.exists(checkpoint_path):
+        if not checkpoint_path or not os.path.exists(checkpoint_path):
             raise FileNotFoundError(
-                f"Không tìm thấy file checkpoint tại {checkpoint_path}."
+                f"Không tìm thấy file checkpoint tại '{checkpoint_path}'."
             )
+
         checkpoint_data = torch.load(checkpoint_path, map_location=self.device)
-        self.model.load_state_dict(checkpoint_data["model_state_dict"])
+        if not isinstance(checkpoint_data, dict) or "model_state_dict" not in checkpoint_data:
+            raise ValueError(
+                f"Checkpoint không hợp lệ tại '{checkpoint_path}': thiếu khóa 'model_state_dict'."
+            )
+
+        # 1. Kiểm tra khớp tên kiến trúc mô hình
+        target_model_name = (expected_model_name or self.model_name or "").strip().lower()
+        ckpt_model_name = checkpoint_data.get("model_name")
+        if ckpt_model_name is not None and target_model_name:
+            if str(ckpt_model_name).strip().lower() != target_model_name:
+                raise ValueError(
+                    f"Lệch tên mô hình khi nạp checkpoint '{checkpoint_path}': "
+                    f"checkpoint='{ckpt_model_name}' != model='{target_model_name}'."
+                )
+
+        # 2. Kiểm tra khớp cấu hình kiến trúc nếu checkpoint có nhúng model_config
+        ref_cfg = expected_model_config if expected_model_config is not None else self.model_config
+        ckpt_cfg = checkpoint_data.get("model_config")
+        if isinstance(ckpt_cfg, dict) and isinstance(ref_cfg, dict):
+            arch_keys = (
+                "input_dim",
+                "hidden_dim",
+                "num_layers",
+                "d_model",
+                "nhead",
+                "num_encoder_layers",
+                "num_decoder_layers",
+                "dim_feedforward",
+                "output_dim",
+            )
+            mismatches = []
+            for key in arch_keys:
+                if key in ckpt_cfg and key in ref_cfg and ckpt_cfg[key] != ref_cfg[key]:
+                    mismatches.append(f"{key}: ckpt={ckpt_cfg[key]} vs model={ref_cfg[key]}")
+            if mismatches:
+                raise ValueError(
+                    f"Lệch siêu tham số kiến trúc trong checkpoint '{checkpoint_path}': "
+                    + ", ".join(mismatches)
+                )
+
+        # 3. Kiểm tra khớp khóa và shape từng tensor trước khi gọi load_state_dict
+        ckpt_sd = checkpoint_data["model_state_dict"]
+        model_sd = self.model.state_dict()
+        missing_keys = sorted(set(model_sd.keys()) - set(ckpt_sd.keys()))
+        unexpected_keys = sorted(set(ckpt_sd.keys()) - set(model_sd.keys()))
+        if strict and (missing_keys or unexpected_keys):
+            raise ValueError(
+                f"Lệch khóa kiến trúc trong state_dict của '{checkpoint_path}': "
+                f"missing={missing_keys[:5]}, unexpected={unexpected_keys[:5]}."
+            )
+
+        shape_mismatches = []
+        for k in model_sd.keys():
+            if k in ckpt_sd and tuple(model_sd[k].shape) != tuple(ckpt_sd[k].shape):
+                shape_mismatches.append(
+                    f"{k}: ckpt={tuple(ckpt_sd[k].shape)} vs model={tuple(model_sd[k].shape)}"
+                )
+        if shape_mismatches:
+            raise ValueError(
+                f"Lệch kích thước trọng số (shape mismatch) trong '{checkpoint_path}': "
+                + "; ".join(shape_mismatches[:5])
+            )
+
+        self.model.load_state_dict(ckpt_sd, strict=strict)
         if "best_val_loss" in checkpoint_data:
             self.best_val_loss = checkpoint_data["best_val_loss"]
+        return checkpoint_data
 
 
 if __name__ == "__main__":
     import sys
+    import tempfile
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
     print("[TEST] Bắt đầu kiểm thử ModelTrainer...")
@@ -450,26 +525,22 @@ if __name__ == "__main__":
     train_ld = DataLoader(dataset, batch_size=4)
     val_ld = DataLoader(dataset, batch_size=4)
 
-    trainer = ModelTrainer(
-        model=dummy_model,
-        optimizer=optimizer,
-        criterion=criterion,
-        device=device,
-        checkpoints_dir="checkpoints",
-        model_name="test_lstm",
-        early_stopping_patience=2,
-    )
+    with tempfile.TemporaryDirectory() as tmp_ckpt_dir:
+        trainer = ModelTrainer(
+            model=dummy_model,
+            optimizer=optimizer,
+            criterion=criterion,
+            device=device,
+            checkpoints_dir=tmp_ckpt_dir,
+            model_name="test_lstm",
+            early_stopping_patience=2,
+        )
 
-    history = trainer.fit(train_ld, val_ld, epochs=2)
-    assert len(history["train_loss"]) == 2
-    assert len(history["val_loss"]) == 2
-    assert len(history["train_acc"]) == 2
-    assert len(history["val_acc"]) == 2
-    assert os.path.exists("checkpoints/test_lstm_best.pth")
-
-    # Dọn dẹp file test
-    for f in os.listdir("checkpoints"):
-        if f.startswith("test_lstm"):
-            os.remove(os.path.join("checkpoints", f))
+        history = trainer.fit(train_ld, val_ld, epochs=2)
+        assert len(history["train_loss"]) == 2
+        assert len(history["val_loss"]) == 2
+        assert len(history["train_acc"]) == 2
+        assert len(history["val_acc"]) == 2
+        assert os.path.exists(os.path.join(tmp_ckpt_dir, "test_lstm_best.pth"))
 
     print("[SUCCESS] Toàn bộ bài kiểm tra cho ModelTrainer đã vượt qua xuất sắc!")

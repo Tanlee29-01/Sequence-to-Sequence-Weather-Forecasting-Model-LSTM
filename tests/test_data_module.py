@@ -133,6 +133,23 @@ class TestDataModule(unittest.TestCase):
             f"Nhiệt độ sau giải chuẩn hóa bất thường: {mean_temp}°C"
         )
 
+    def test_val_test_leading_nan_uses_train_stats_not_future_bfill(self):
+        """Kiểm tra NaN ở dòng đầu Val/Test được điền bằng trung vị Train, tuyệt đối không bfill từ tương lai."""
+        periods = 1000
+        date_range = pd.date_range("2012-01-01", periods=periods, freq="1h")
+        data = np.ones((periods, 14), dtype=np.float64) * 10.0
+        # Cài giá trị tương lai rất khác biệt ở dòng 1 của Val (index 701) và NaN ở dòng 0 của Val (index 700)
+        data[700, 1] = np.nan
+        data[701:, 1] = 99.0
+        df = pd.DataFrame(data, index=date_range, columns=JenaDataModule.DEFAULT_FEATURES)
+
+        dm = JenaDataModule(seq_len=168, pred_len=72)
+        dm.setup(df)
+
+        self.assertFalse(dm.val_df.isna().any().any())
+        # Nếu dùng bfill từ tương lai thì val_df.iloc[0, 1] sẽ là 99.0; đúng anti-leakage phải là trung vị Train = 10.0
+        self.assertAlmostEqual(float(dm.val_df.iloc[0]["T (degC)"]), 10.0, places=5)
+
 
 def run_smoke_test():
     """Hàm chạy nhanh Smoke Test với định dạng đầu ra chi tiết."""
@@ -152,13 +169,17 @@ def run_smoke_test():
     dm.setup(mock_df)
     print(f"      -> Train size: {len(dm.train_df)} | Val size: {len(dm.val_df)} | Test size: {len(dm.test_df)}")
 
-    # 2. Kiểm tra chống rò rỉ
+    # 2. Kiểm tra chống rò rỉ và lọc sạch dữ liệu lỗi thực sự
     print("[2/5] Xác minh Chống rò rỉ dữ liệu (Anti-Leakage Verification)...")
     assert dm.verify_zero_leakage() is True
+    assert not (dm.train_df["wv (m/s)"] <= -9000).any(), "Còn giá trị lỗi -9999.0 trong train_df"
+    assert not dm.train_df.isna().any().any(), "Còn giá trị NaN trong train_df sau imputation"
+    assert not dm.val_df.isna().any().any(), "Còn giá trị NaN trong val_df sau imputation"
+    assert not dm.test_df.isna().any().any(), "Còn giá trị NaN trong test_df sau imputation"
     print("      [ASSERT 1] Train max time < Val min time: PASSED")
     print("      [ASSERT 2] Val max time < Test min time: PASSED")
     print(f"      [ASSERT 3] Scaler n_samples_seen_ ({dm.scaler.n_samples_seen_}) == len(train_df): PASSED")
-    print("      [ASSERT 4] Lọc sạch cảm biến gió lỗi (-9999.0): PASSED")
+    print("      [ASSERT 4] Lọc sạch cảm biến gió lỗi (-9999.0) & Zero NaN: PASSED")
 
     # 3. Kiểm tra DataLoader
     print("[3/5] Kiểm tra kích thước Tensor từ DataLoader...")

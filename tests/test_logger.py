@@ -5,6 +5,7 @@ và hình ảnh trực quan (Forecast Figure, Attention Heatmap).
 
 import os
 import sys
+import tempfile
 import unittest
 import numpy as np
 
@@ -20,20 +21,15 @@ class TestLogger(unittest.TestCase):
     """Bộ kiểm thử cho TensorBoardLogger."""
 
     def setUp(self):
-        """Khởi tạo logger trong thư mục tạm thời."""
-        self.test_log_dir = "runs/test_logger_run"
+        """Khởi tạo logger trong thư mục tạm thời cô lập."""
+        self._tmp_dir = tempfile.TemporaryDirectory()
+        self.test_log_dir = self._tmp_dir.name
         self.logger = TensorBoardLogger(log_dir=self.test_log_dir, experiment_name="unit_test")
 
     def tearDown(self):
-        """Đóng logger và dọn dẹp các tệp log."""
+        """Đóng logger và dọn dẹp các tệp log tạm."""
         self.logger.close()
-        if os.path.exists(self.test_log_dir):
-            for root, dirs, files in os.walk(self.test_log_dir, topdown=False):
-                for f in files:
-                    os.remove(os.path.join(root, f))
-                for d in dirs:
-                    os.rmdir(os.path.join(root, d))
-            os.rmdir(self.test_log_dir)
+        self._tmp_dir.cleanup()
 
     def test_log_scalars(self):
         """Kiểm tra ghi nhận scalar metrics vào TensorBoard."""
@@ -64,31 +60,24 @@ def run_smoke_test():
     print("[SMOKE TEST] BẮT ĐẦU KIỂM THỬ TENSORBOARD LOGGER (TOPIC 5)")
     print("=" * 70)
 
-    test_dir = "runs/smoke_test_logger"
-    logger = TensorBoardLogger(log_dir=test_dir, experiment_name="smoke_test")
+    with tempfile.TemporaryDirectory() as test_dir:
+        logger = TensorBoardLogger(log_dir=test_dir, experiment_name="smoke_test")
 
-    print("[1/3] Ghi nhận Scalar metrics (Loss, Accuracy, Hardware RAM/VRAM)...")
-    logger.log_metrics(epoch=1, train_loss=0.45, val_loss=0.42, lr=0.001, ram_mb=110.0, vram_mb=0.0)
-    print("      -> Scalars logged [OK]")
+        print("[1/3] Ghi nhận Scalar metrics (Loss, Accuracy, Hardware RAM/VRAM)...")
+        logger.log_metrics(epoch=1, train_loss=0.45, val_loss=0.42, lr=0.001, ram_mb=110.0, vram_mb=0.0)
+        print("      -> Scalars logged [OK]")
 
-    print("[2/3] Ghi nhận hình ảnh dự báo và Attention Heatmap 72x168...")
-    dummy_true = np.ones(72) * 20.0
-    dummy_pred = np.ones(72) * 20.5
-    logger.log_prediction_figure(epoch=1, y_true=dummy_true, y_pred=dummy_pred)
-    dummy_attn = np.random.rand(72, 168)
-    dummy_attn = dummy_attn / dummy_attn.sum(axis=1, keepdims=True)
-    logger.log_attention_heatmap(epoch=1, attention_matrix=dummy_attn)
-    print("      -> Figures logged [OK]")
+        print("[2/3] Ghi nhận hình ảnh dự báo và Attention Heatmap 72x168...")
+        dummy_true = np.ones(72) * 20.0
+        dummy_pred = np.ones(72) * 20.5
+        logger.log_prediction_figure(epoch=1, y_true=dummy_true, y_pred=dummy_pred)
+        dummy_attn = np.random.rand(72, 168)
+        dummy_attn = dummy_attn / dummy_attn.sum(axis=1, keepdims=True)
+        logger.log_attention_heatmap(epoch=1, attention_matrix=dummy_attn)
+        print("      -> Figures logged [OK]")
 
-    print("[3/3] Đóng logger và dọn dẹp...")
-    logger.close()
-    if os.path.exists(test_dir):
-        for root, dirs, files in os.walk(test_dir, topdown=False):
-            for f in files:
-                os.remove(os.path.join(root, f))
-            for d in dirs:
-                os.rmdir(os.path.join(root, d))
-        os.rmdir(test_dir)
+        print("[3/3] Đóng logger và dọn dẹp thư mục tạm...")
+        logger.close()
     print("      -> Dọn dẹp hoàn tất [OK]")
 
     print("-" * 70)

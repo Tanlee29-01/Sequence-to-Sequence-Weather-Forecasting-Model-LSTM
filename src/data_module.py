@@ -103,6 +103,7 @@ class JenaDataModule:
         test_ratio: float = 0.15,
         resample_rule: str = "1h",
         invalid_wind_val: float = -9999.0,
+        features: Optional[List[str]] = None,
     ):
         """Khởi tạo Data Module với các tham số phân chia và tiền xử lý dữ liệu thời tiết.
         - Hàm này thực hiện: Thiết lập đường dẫn dữ liệu, tỷ lệ chia tập, độ dài chuỗi vào/ra và khởi tạo bộ scaler.
@@ -116,6 +117,7 @@ class JenaDataModule:
             + test_ratio: Tỷ lệ phân bổ tập kiểm thử (mặc định 0.15).
             + resample_rule: Quy tắc gom mẫu thời gian (mặc định '1h').
             + invalid_wind_val: Giá trị lỗi của cảm biến đo gió cần lọc (mặc định -9999.0).
+            + features: Danh sách cột đặc trưng khí tượng cần giữ (mặc định 14 cột DEFAULT_FEATURES).
         - Output:
             + Không trả về giá trị (khởi tạo đối tượng DataModule).
         """
@@ -129,7 +131,11 @@ class JenaDataModule:
         self.resample_rule = resample_rule
         self.invalid_wind_val = invalid_wind_val
 
-        self.features: List[str] = self.DEFAULT_FEATURES
+        self.features: List[str] = list(features) if features is not None else list(self.DEFAULT_FEATURES)
+        if self.target_col not in self.features:
+            raise ValueError(
+                f"Cột mục tiêu '{self.target_col}' không nằm trong danh sách đặc trưng: {self.features}"
+            )
         self.target_idx: int = self.features.index(self.target_col)
 
         self.scaler: StandardScaler = StandardScaler()
@@ -232,10 +238,23 @@ class JenaDataModule:
                 "Dữ liệu chưa được phân chia! Vui lòng gọi split_data() trước."
             )
 
-        # Xử lý ô trống nội bộ từng tập (ffill nội tại, tuyệt đối không vắt chéo)
-        train_clean = self.train_df.ffill().bfill().values
-        val_clean = self.val_df.ffill().bfill().values
-        test_clean = self.test_df.ffill().bfill().values
+        # Xử lý ô trống nội bộ từng tập:
+        # - Train: ffill theo chiều thời gian, chỉ bfill cho các hàng đầu của riêng Train.
+        # - Val & Test: CHỈ ffill theo chiều quá khứ; nếu hàng đầu vẫn là NaN thì điền bằng trung vị Train
+        #   (tuyệt đối không dùng bfill trên Val/Test để tránh nhìn trước tương lai trong nội bộ tập).
+        train_imputed = self.train_df.ffill().bfill()
+        train_fill_values = train_imputed.median()
+        val_imputed = self.val_df.ffill().fillna(train_fill_values)
+        test_imputed = self.test_df.ffill().fillna(train_fill_values)
+
+        # Cập nhật lại các DataFrame nội tại để đồng nhất giữa EDA, kiểm thử và scaler
+        self.train_df = train_imputed
+        self.val_df = val_imputed
+        self.test_df = test_imputed
+
+        train_clean = self.train_df.values
+        val_clean = self.val_df.values
+        test_clean = self.test_df.values
 
         # CHỈ FIT TRÊN TẬP HUẤN LUYỆN
         self.scaler.fit(train_clean)

@@ -5,6 +5,7 @@ Dừng sớm (Early Stopping), lưu Checkpoint (.pth) và đo lường tài nguy
 
 import os
 import sys
+import tempfile
 import unittest
 import torch
 import torch.nn as nn
@@ -23,7 +24,7 @@ class TestTrainer(unittest.TestCase):
     """Bộ kiểm thử cho ModelTrainer."""
 
     def setUp(self):
-        """Khởi tạo mô hình và dữ liệu giả lập trước mỗi test case."""
+        """Khởi tạo mô hình và dữ liệu giả lập trước mỗi test case trong thư mục tạm cô lập."""
         torch.manual_seed(42)
         self.device = torch.device("cpu")
         self.model = ModelBuilder_Seq2SeqLSTM(input_dim=14, hidden_dim=16, num_layers=1)
@@ -37,8 +38,8 @@ class TestTrainer(unittest.TestCase):
         self.train_loader = DataLoader(dataset, batch_size=4, shuffle=True)
         self.val_loader = DataLoader(dataset, batch_size=4, shuffle=False)
 
-        self.test_ckpt_dir = "checkpoints/test_run"
-        os.makedirs(self.test_ckpt_dir, exist_ok=True)
+        self._tmp_dir = tempfile.TemporaryDirectory()
+        self.test_ckpt_dir = self._tmp_dir.name
 
         self.trainer = ModelTrainer(
             model=self.model,
@@ -52,11 +53,8 @@ class TestTrainer(unittest.TestCase):
         )
 
     def tearDown(self):
-        """Dọn dẹp các tệp checkpoint sau khi kiểm thử xong."""
-        if os.path.exists(self.test_ckpt_dir):
-            for f in os.listdir(self.test_ckpt_dir):
-                os.remove(os.path.join(self.test_ckpt_dir, f))
-            os.rmdir(self.test_ckpt_dir)
+        """Dọn dẹp thư mục checkpoint tạm sau khi kiểm thử xong."""
+        self._tmp_dir.cleanup()
 
     def test_train_epoch_and_val_step(self):
         """Kiểm tra 1 epoch huấn luyện và validation trả về loss và accuracy hợp lệ."""
@@ -139,34 +137,27 @@ def run_smoke_test():
     train_ld = DataLoader(dataset, batch_size=4)
     val_ld = DataLoader(dataset, batch_size=4)
 
-    test_dir = "checkpoints/smoke_test_trainer"
-    os.makedirs(test_dir, exist_ok=True)
+    with tempfile.TemporaryDirectory() as test_dir:
+        trainer = ModelTrainer(
+            model=model,
+            optimizer=optimizer,
+            criterion=criterion,
+            device=device,
+            checkpoints_dir=test_dir,
+            model_name="smoke_lstm",
+            early_stopping_patience=2,
+        )
 
-    trainer = ModelTrainer(
-        model=model,
-        optimizer=optimizer,
-        criterion=criterion,
-        device=device,
-        checkpoints_dir=test_dir,
-        model_name="smoke_lstm",
-        early_stopping_patience=2,
-    )
+        print(f"[INIT] Khởi tạo ModelTrainer (Device: {device}, Patience: 2, Batch Size: 4)")
+        history = trainer.fit(train_ld, val_ld, epochs=2)
 
-    print(f"[INIT] Khởi tạo ModelTrainer (Device: {device}, Patience: 2, Batch Size: 4)")
-    history = trainer.fit(train_ld, val_ld, epochs=2)
+        assert len(history["train_loss"]) == 2
+        assert len(history["val_loss"]) == 2
+        print("      [ASSERT 1] Huấn luyện đủ 2 epochs: PASSED")
 
-    assert len(history["train_loss"]) == 2
-    assert len(history["val_loss"]) == 2
-    print("      [ASSERT 1] Huấn luyện đủ 2 epochs: PASSED")
-
-    best_ckpt = os.path.join(test_dir, "smoke_lstm_best.pth")
-    assert os.path.exists(best_ckpt), "Không tìm thấy file checkpoint tốt nhất"
-    print(f"      [ASSERT 2] Checkpoint lưu trữ thành công tại: {best_ckpt} -> PASSED")
-
-    # Dọn dẹp
-    for f in os.listdir(test_dir):
-        os.remove(os.path.join(test_dir, f))
-    os.rmdir(test_dir)
+        best_ckpt = os.path.join(test_dir, "smoke_lstm_best.pth")
+        assert os.path.exists(best_ckpt), "Không tìm thấy file checkpoint tốt nhất"
+        print(f"      [ASSERT 2] Checkpoint lưu trữ thành công tại thư mục tạm -> PASSED")
     print("      [ASSERT 3] Dọn dẹp tệp tạm thời hoàn tất: PASSED")
 
     print("-" * 70)
