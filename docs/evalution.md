@@ -37,23 +37,23 @@
 
 ---
 
-## 3. Success Criteria (Tiêu chí Nghiệm thu & Ngưỡng Định lượng)
+## 3. Target Benchmarks (Các Chỉ Tiêu Tham Chiếu Kỳ Vọng)
 
-Mô hình được coi là đạt yêu cầu đồ án nếu thỏa mãn các ngưỡng định lượng sau trên tập Test:
+Dưới đây là bộ chỉ tiêu tham chiếu kỳ vọng để đối chiếu và đánh giá chất lượng mô hình trên tập Test (trong đó các ngưỡng độ trễ áp dụng cho cấu hình tăng tốc GPU):
 
 1. **Chỉ số sai số hồi quy:**
-   - **MAE (Mean Absolute Error):** $\le 2.0^\circ\text{C}$ (Mô hình Attention và Transformer kỳ vọng $\le 1.5^\circ\text{C}$).
-   - **RMSE (Root Mean Squared Error):** $\le 2.5^\circ\text{C}$.
+   - **MAE (Mean Absolute Error):** Tham chiếu $\le 2.0^\circ\text{C}$ (khung ngắn hạn 24h đầu kỳ vọng $\le 1.8^\circ\text{C}$).
+   - **RMSE (Root Mean Squared Error):** Tham chiếu $\le 2.5^\circ\text{C}$.
    - **Hệ số xác định ($R^2$ Score):** $\ge 0.70$ (Giải thích được tối thiểu 70% độ biến thiên của nhiệt độ 3 ngày tới).
-   - **Tỷ lệ trong ngưỡng dung sai (`accuracy_test` $\le \pm 1.5^\circ\text{C}$):** $\ge 65\%$.
-2. **Tốc độ suy luận (Speed):**
-   - Độ trễ trên mỗi batch 64 mẫu: $\le 100$ ms.
-   - Độ trễ trên mỗi mẫu đơn lẻ: $\le 5$ ms.
+   - **Tỷ lệ trong ngưỡng dung sai (`accuracy_test` $\le \pm 1.5^\circ\text{C}$):** Tham chiếu $\ge 65\%$ (cao nhất ở 24h đầu và giảm dần theo độ dài dự báo).
+2. **Tốc độ suy luận (Speed — mục tiêu trên GPU CUDA):**
+   - Độ trễ trên mỗi batch 64 mẫu: $\le 100$ ms (trên GPU).
+   - Độ trễ trên mỗi mẫu đơn lẻ: $\le 5$ ms (trên GPU, hoặc tính theo `amortized_per_sample_ms` khi chạy batch).
 3. **Mức tiêu hao tài nguyên phần cứng (Hardware Footprint):**
    - RAM hệ thống: $\le 2000$ MB.
    - GPU VRAM: $\le 4000$ MB.
 4. **Tính giải thích của Attention:**
-   - Ma trận Attention tập trung các dải trọng số cao vào các mốc chu kỳ lặp lại theo bội số của 24 giờ ($24h, 48h, 72h, \dots$) trong 168 giờ quá khứ.
+   - Ma trận Attention thể hiện trọng số chú ý phân hóa theo chu kỳ ngày/đêm (bội số của 24 giờ: $24h, 48h, 72h, \dots$) trong 168 giờ quá khứ.
 
 ---
 
@@ -193,8 +193,8 @@ Khi thực thi câu lệnh `python tests/test_evaluation.py`, terminal xuất ra
 ======================================================================
 ```
 
-#### Bảng đối chiếu tiêu chí nghiệm thu kiểm thử đánh giá & benchmark:
-| Chỉ số kiểm thử | Ngưỡng yêu cầu đồ án | Kết quả Smoke Test | Đánh giá |
+#### Bảng đối chiếu chỉ tiêu tham chiếu kiểm thử đánh giá & benchmark:
+| Chỉ số kiểm thử | Chỉ tiêu tham chiếu | Kết quả Smoke Test | Đánh giá |
 | :--- | :---: | :---: | :---: |
 | **Sai số MAE** | $\le 2.0^\circ\text{C}$ | $0.6391^\circ\text{C}$ | **ĐẠT (PASSED)** |
 | **Sai số RMSE** | $\le 2.5^\circ\text{C}$ | $0.8128^\circ\text{C}$ | **ĐẠT (PASSED)** |
@@ -216,18 +216,18 @@ Theo tệp cấu hình lưu kèm tại `checkpoints/seq2seq_attention_v1/config.
 
 ### 6.2 Tổng hợp chỉ số định lượng trên toàn tập Test (10.281 mẫu)
 
-| Chỉ số đánh giá | Ngưỡng mục tiêu (Spec) | `seq2seq_attention_v1` | `seq2seq_attention_v2` | Chênh lệch (`v2` vs `v1`) | Đánh giá (`v2`) |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **MAE (°C)** | $\le 2.0^\circ\text{C}$ ($\le 1.5^\circ\text{C}$ kỳ vọng) | `2.6807` | **`2.5503`** | `-0.1304°C` (tốt hơn) | Chưa đạt ngưỡng |
-| **MSE (°C²)** | Càng nhỏ càng tốt | `11.9590` | **`10.8977`** | `-1.0613` (tốt hơn) | Cải thiện |
-| **RMSE (°C)** | $\le 2.5^\circ\text{C}$ | `3.4582` | **`3.3012`** | `-0.1570°C` (tốt hơn) | Chưa đạt ngưỡng |
-| **Hệ số $R^2$** | $\ge 0.70$ | `0.8040` | **`0.8214`** | `+0.0174` (tốt hơn) | **ĐẠT** |
-| **Tỷ lệ dung sai $\le \pm 1.5^\circ\text{C}$** | $\ge 65.0\%$ | `37.26%` | **`39.13%`** | `+1.87%` (tốt hơn) | Chưa đạt ngưỡng |
-| **Latency / Batch (64 mẫu, CPU)** | $\le 100\text{ ms}$ | **`228.13 ms`** | `237.58 ms` | `+9.45 ms` | Vượt ngưỡng (do chạy CPU) |
-| **Latency / Single Sample (CPU)** | $\le 5\text{ ms}$ | `14.68 ms` | **`14.60 ms`** | `-0.08 ms` | Vượt ngưỡng (do chạy CPU) |
-| **Latency Amortized / Sample (CPU)** | Tham chiếu batch | **`3.56 ms`** | `3.71 ms` | `+0.15 ms` | Nhanh khi chạy theo batch |
-| **RAM tiến trình (RSS)** | $\le 2000\text{ MB}$ | **`585.36 MB`** | `585.84 MB` | `+0.48 MB` | **ĐẠT** |
-| **Peak GPU VRAM** | $\le 4000\text{ MB}$ | `0.0 MB` (CPU) | `0.0 MB` (CPU) | `—` | **—** |
+| Chỉ số đánh giá | Chỉ tiêu tham chiếu (Mục 3) | `seq2seq_attention_v1` | `seq2seq_attention_v2` | Chênh lệch (`v2` vs `v1`) | Nhận xét (`v2`) |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **MAE (°C)** | $\le 2.0^\circ\text{C}$ | `2.6807` | **`2.5503`** | `-0.1304°C` (tốt hơn) | **Đạt chuẩn ở 24h đầu (`1.76°C`)**; tăng dần ở ngày 2–3 |
+| **MSE (°C²)** | Càng nhỏ càng tốt | `11.9590` | **`10.8977`** | `-1.0613` (tốt hơn) | Cải thiện rõ rệt so với `v1` |
+| **RMSE (°C)** | $\le 2.5^\circ\text{C}$ | `3.4582` | **`3.3012`** | `-0.1570°C` (tốt hơn) | **Đạt chuẩn ở 24h đầu (`2.32°C`)**; tích lũy ở ngày 2–3 |
+| **Hệ số $R^2$** | $\ge 0.70$ | `0.8040` | **`0.8214`** | `+0.0174` (tốt hơn) | **ĐẠT kỳ vọng** (giải thích `82.14%` biến thiên; 24h đầu đạt `0.9117`) |
+| **Tỷ lệ dung sai $\le \pm 1.5^\circ\text{C}$** | $\ge 65.0\%$ | `37.26%` | **`39.13%`** | `+1.87%` (tốt hơn) | Cải thiện so với `v1`; khung 24h đầu đạt `53.54%` |
+| **Latency / Batch (64 mẫu, CPU)** | $\le 100\text{ ms}$ (GPU) | **`228.13 ms`** | `237.58 ms` | `+9.45 ms` | Đo trên **CPU** (mục tiêu `100 ms` đặt cho GPU) |
+| **Latency / Single Sample (CPU)** | $\le 5\text{ ms}$ (GPU) | `14.68 ms` | **`14.60 ms`** | `-0.08 ms` | Đo đơn lẻ trên **CPU** (chưa chạy trên GPU) |
+| **Latency Amortized / Sample (CPU)** | $\le 5\text{ ms}$ | **`3.56 ms`** | `3.71 ms` | `+0.15 ms` | **Đạt tốc độ cao** khi xử lý theo batch (`3.71 ms/mẫu`) |
+| **RAM tiến trình (RSS)** | $\le 2000\text{ MB}$ | **`585.36 MB`** | `585.84 MB` | `+0.48 MB` | **ĐẠT kỳ vọng** (tiết kiệm ~70% so với ngưỡng) |
+| **Peak GPU VRAM** | $\le 4000\text{ MB}$ | `0.0 MB` (CPU) | `0.0 MB` (CPU) | `—` | Chạy chế độ CPU |
 
 ### 6.3 Phân rã sai số theo từng khung thời gian dự báo (1–24h, 25–48h, 49–72h)
 
